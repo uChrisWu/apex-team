@@ -5,7 +5,7 @@ module.exports = {
   apiMode: 'mock',
 
   // cloud 模式：云开发环境 ID（留空则使用默认环境）与业务云函数名
-  cloudEnv: '',
+  cloudEnv: 'apex-team-mvp-d9g5f5u5h64c3c701',
   cloudFunctionName: 'apex',
 
   // mock 模式：模拟网络延迟，便于看到加载状态

@@ -52,6 +52,8 @@ npm test
 
 ## 接入真实后端
 
+微信云开发后端源码、PostgreSQL 权限、索引、测试配置初始化及部署步骤见 [docs/backend-cloud.md](docs/backend-cloud.md)。
+
 1. 在 `miniprogram/config/env.js` 中设置 `apiMode: 'cloud'`，并填写 `cloudEnv` 和 `cloudFunctionName`。
 2. 前端以 `{ action, payload }` 调用一个业务云函数，`action` 为接口名（如 `listPosts`）。返回值需为约定的 `{ code, data | message, requestId }`。
 

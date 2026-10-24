@@ -1,3 +1,6 @@
 node_modules/
 project.private.config.json
+dev-app-config.sql
+cloudfunctions/apex-deploy.zip
+debug.log
 .DS_Store
