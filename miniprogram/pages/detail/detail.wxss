@@ -1,0 +1,15 @@
+.head { display: flex; align-items: center; justify-content: space-between; }
+.rank { font-size: 40rpx; font-weight: 700; }
+.count { margin-top: 12rpx; color: var(--c-text-2); }
+.count-num { font-size: 56rpx; font-weight: 700; color: var(--c-text); }
+.count-note { margin-left: 16rpx; color: var(--c-brand); font-size: 26rpx; }
+.rows { margin-top: 20rpx; border-top: 1rpx solid var(--c-line); padding-top: 12rpx; }
+.kv { display: flex; justify-content: space-between; padding: 10rpx 0; }
+.k { color: var(--c-text-3); }
+.v { color: var(--c-text); }
+.note-box { margin-top: 12rpx; }
+.note { margin-top: 8rpx; white-space: pre-wrap; word-break: break-all; }
+.notice--off { color: var(--c-text-2); background: var(--c-muted-soft); }
+.notice-text { font-weight: 600; }
+.contact { margin-top: 24rpx; }
+.manage-title { margin: 0 0 20rpx; }

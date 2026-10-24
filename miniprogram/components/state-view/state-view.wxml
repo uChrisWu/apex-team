@@ -1,0 +1,14 @@
+<view class="state">
+  <block wx:if="{{status === 'loading'}}">
+    <view class="spinner"></view>
+    <view class="text">{{message || '加载中…'}}</view>
+  </block>
+  <block wx:elif="{{status === 'empty'}}">
+    <view class="text">{{message || '暂无数据'}}</view>
+    <view wx:if="{{actionText}}" class="action" hover-class="btn-hover" bindtap="onAction">{{actionText}}</view>
+  </block>
+  <block wx:else>
+    <view class="text">{{message || '加载失败'}}</view>
+    <view class="action" hover-class="btn-hover" bindtap="onAction">{{actionText || '重试'}}</view>
+  </block>
+</view>

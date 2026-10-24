@@ -1,0 +1,7 @@
+.active-tip {
+  background: var(--c-warn-soft);
+  color: var(--c-warn);
+  font-size: 26rpx;
+}
+.link { margin-left: 8rpx; font-weight: 600; }
+.foot-note { margin-top: 24rpx; text-align: center; }

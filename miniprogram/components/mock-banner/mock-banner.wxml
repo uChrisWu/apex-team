@@ -1,0 +1,1 @@
+<view wx:if="{{show}}" class="banner">模拟模式：数据仅保存在本机，不会真实发布</view>

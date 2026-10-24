@@ -1,0 +1,90 @@
+page {
+  --c-bg: #f4f5f7;
+  --c-surface: #ffffff;
+  --c-text: #1b1d23;
+  --c-text-2: #5c616b;
+  --c-text-3: #8a8f99;
+  --c-line: #e6e8ec;
+  --c-brand: #d33a2c;
+  --c-brand-soft: #fbe9e7;
+  --c-ok: #1f8a4c;
+  --c-ok-soft: #e4f4ea;
+  --c-warn: #b76e00;
+  --c-warn-soft: #fdf1dc;
+  --c-muted-soft: #eceef1;
+
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: 28rpx;
+  line-height: 1.5;
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+}
+
+.container {
+  padding: 24rpx 24rpx 48rpx;
+}
+
+.card {
+  background: var(--c-surface);
+  border-radius: 16rpx;
+  padding: 28rpx;
+  margin-bottom: 20rpx;
+}
+
+.section-title {
+  font-size: 26rpx;
+  color: var(--c-text-3);
+  margin: 8rpx 4rpx 16rpx;
+}
+
+/* 状态标签 */
+.tag {
+  display: inline-block;
+  font-size: 22rpx;
+  line-height: 1;
+  padding: 8rpx 14rpx;
+  border-radius: 8rpx;
+  background: var(--c-muted-soft);
+  color: var(--c-text-2);
+}
+.tag--RECRUITING { background: var(--c-ok-soft); color: var(--c-ok); }
+.tag--FULL { background: var(--c-warn-soft); color: var(--c-warn); }
+.tag--CLOSED,
+.tag--EXPIRED { background: var(--c-muted-soft); color: var(--c-text-3); }
+
+/* 按钮 */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84rpx;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+  background: var(--c-surface);
+  color: var(--c-text);
+  border: 1rpx solid var(--c-line);
+}
+.btn--primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); }
+.btn--danger { color: var(--c-brand); }
+.btn--small { height: 60rpx; font-size: 26rpx; padding: 0 24rpx; }
+.btn--disabled { opacity: 0.45; }
+.btn-hover { opacity: 0.8; }
+
+.btn-row {
+  display: flex;
+  gap: 16rpx;
+}
+.btn-row .btn { flex: 1; }
+
+.muted { color: var(--c-text-3); }
+.hint {
+  font-size: 24rpx;
+  color: var(--c-text-3);
+}
+
+.list-footer {
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--c-text-3);
+  padding: 24rpx 0;
+}

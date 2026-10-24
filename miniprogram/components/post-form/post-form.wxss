@@ -1,0 +1,49 @@
+.field { padding: 20rpx 0; border-bottom: 1rpx solid var(--c-line); }
+.field:last-child { border-bottom: none; }
+.label {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin-bottom: 16rpx;
+  display: flex;
+  align-items: center;
+}
+.req { color: var(--c-brand); margin-left: 4rpx; }
+.label-note { margin-left: auto; font-weight: 400; font-size: 24rpx; color: var(--c-text-3); }
+.picker {
+  height: 80rpx;
+  line-height: 80rpx;
+  padding: 0 24rpx;
+  background: var(--c-bg);
+  border-radius: 10rpx;
+}
+.placeholder { color: var(--c-text-3); }
+.chips { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.chip {
+  min-width: 120rpx;
+  padding: 14rpx 24rpx;
+  text-align: center;
+  border-radius: 10rpx;
+  background: var(--c-bg);
+  border: 2rpx solid transparent;
+}
+.chip--on {
+  color: var(--c-brand);
+  background: var(--c-brand-soft);
+  border-color: var(--c-brand);
+}
+.input {
+  height: 80rpx;
+  padding: 0 24rpx;
+  background: var(--c-bg);
+  border-radius: 10rpx;
+}
+.textarea {
+  width: auto;
+  min-height: 140rpx;
+  padding: 20rpx 24rpx;
+  background: var(--c-bg);
+  border-radius: 10rpx;
+}
+.counter { text-align: right; font-size: 22rpx; color: var(--c-text-3); margin-top: 8rpx; }
+.hint { margin-top: 8rpx; }
+.error { margin-top: 8rpx; font-size: 24rpx; color: var(--c-brand); }

@@ -1,0 +1,43 @@
+.post-card { display: block; }
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rank {
+  font-size: 34rpx;
+  font-weight: 600;
+}
+.slots {
+  font-size: 26rpx;
+  color: var(--c-text-2);
+  background: var(--c-muted-soft);
+  padding: 6rpx 16rpx;
+  border-radius: 8rpx;
+}
+.slots--hot {
+  color: var(--c-brand);
+  background: var(--c-brand-soft);
+}
+.meta {
+  margin-top: 10rpx;
+  color: var(--c-text-2);
+  font-size: 26rpx;
+}
+.mode { color: var(--c-text); font-weight: 600; }
+.dot { margin: 0 10rpx; color: var(--c-text-3); }
+.note {
+  margin-top: 14rpx;
+  color: var(--c-text);
+  font-size: 26rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.foot {
+  margin-top: 16rpx;
+  display: flex;
+  justify-content: space-between;
+  font-size: 22rpx;
+  color: var(--c-text-3);
+}

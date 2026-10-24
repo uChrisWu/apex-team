@@ -1,0 +1,66 @@
+<view class="card form">
+  <view class="field">
+    <view class="label">游戏模式<text class="req">*</text></view>
+    <view class="chips">
+      <view wx:for="{{config.modes}}" wx:key="code"
+            class="chip {{form.modeCode === item.code ? 'chip--on' : ''}}"
+            data-value="{{item.code}}" bindtap="onModeTap">{{item.name}}</view>
+    </view>
+    <view wx:if="{{errors.modeCode}}" class="error">{{errors.modeCode}}</view>
+  </view>
+
+  <view class="field">
+    <view class="label">目标段位<text class="req">*</text></view>
+    <picker range="{{config.ranks}}" range-key="name" value="{{rankIndex < 0 ? 0 : rankIndex}}" bindchange="onRankChange">
+      <view class="picker {{rankIndex < 0 ? 'placeholder' : ''}}">
+        {{rankIndex < 0 ? '请选择要招募的段位' : config.ranks[rankIndex].name}}
+      </view>
+    </picker>
+    <view wx:if="{{errors.rankCode}}" class="error">{{errors.rankCode}}</view>
+  </view>
+
+  <view class="field">
+    <view class="label">服务器<text class="req">*</text></view>
+    <picker range="{{config.servers}}" range-key="name" value="{{serverIndex < 0 ? 0 : serverIndex}}" bindchange="onServerChange">
+      <view class="picker {{serverIndex < 0 ? 'placeholder' : ''}}">
+        {{serverIndex < 0 ? '请选择计划游玩的服务器' : config.servers[serverIndex].name}}
+      </view>
+    </picker>
+    <view wx:if="{{errors.serverCode}}" class="error">{{errors.serverCode}}</view>
+  </view>
+
+  <view class="field">
+    <view class="label">
+      当前人数<text class="req">*</text>
+      <text class="label-note">
+        {{form.currentPlayers >= limits.maxPlayers ? '已满员' : '缺 ' + (limits.maxPlayers - form.currentPlayers) + ' 人'}}
+      </text>
+    </view>
+    <view class="chips">
+      <view wx:for="{{counts}}" wx:key="*this"
+            class="chip {{form.currentPlayers === item ? 'chip--on' : ''}}"
+            data-value="{{item}}" bindtap="onCountTap">{{item}}/{{limits.maxPlayers}}</view>
+    </view>
+    <view wx:if="{{errors.currentPlayers}}" class="error">{{errors.currentPlayers}}</view>
+  </view>
+
+  <view class="field">
+    <view class="label">游戏 ID<text class="req">*</text></view>
+    <input class="input" value="{{form.gameId}}" maxlength="{{limits.gameIdMaxLength}}"
+           placeholder="其他玩家将通过此 ID 在游戏内联系你" bindinput="onGameIdInput" />
+    <view class="hint">仅登录用户在详情页可复制，不在大厅公开展示</view>
+    <view wx:if="{{errors.gameId}}" class="error">{{errors.gameId}}</view>
+  </view>
+
+  <view class="field">
+    <view class="label">备注<text class="label-note">选填</text></view>
+    <textarea class="textarea" value="{{form.note}}" maxlength="{{limits.noteMaxLength}}"
+              placeholder="例如：开麦、打法、在线时间" auto-height bindinput="onNoteInput" />
+    <view class="counter">{{noteLength}}/{{limits.noteMaxLength}}</view>
+    <view wx:if="{{errors.note}}" class="error">{{errors.note}}</view>
+  </view>
+</view>
+
+<view class="btn btn--primary {{submitting ? 'btn--disabled' : ''}}" hover-class="btn-hover" bindtap="onSubmit">
+  {{submitting ? '提交中…' : submitText}}
+</view>

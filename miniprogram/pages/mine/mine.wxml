@@ -1,0 +1,57 @@
+<mock-banner />
+
+<view class="container">
+  <state-view wx:if="{{loginStatus === 'checking'}}" status="loading" />
+
+  <view wx:elif="{{loginStatus === 'guest'}}" class="card login-card">
+    <view class="login-title">登录后查看我的发布</view>
+    <view class="hint">登录后可以发布组队、复制队友游戏 ID，并管理你发布的信息。</view>
+    <view class="btn btn--primary login-btn {{loggingIn ? 'btn--disabled' : ''}}" hover-class="btn-hover" bindtap="onLogin">
+      {{loggingIn ? '登录中…' : '微信登录'}}
+    </view>
+  </view>
+
+  <block wx:else>
+    <state-view wx:if="{{listStatus === 'loading'}}" status="loading" />
+    <state-view wx:elif="{{listStatus === 'error'}}" status="error" message="{{listError}}" bindaction="reload" />
+    <state-view wx:elif="{{listStatus === 'empty'}}" status="empty" message="你还没有发布过组队信息"
+                actionText="去发布" bindaction="onPublish" />
+    <block wx:else>
+      <post-card wx:for="{{list}}" wx:key="id" post="{{item}}" showStatus bindselect="onSelectPost">
+        <view class="actions">
+          <block wx:if="{{item.status === 'RECRUITING'}}">
+            <view class="btn btn--small" hover-class="btn-hover" data-id="{{item.id}}" catchtap="onEdit">编辑</view>
+            <view class="btn btn--small" hover-class="btn-hover" data-id="{{item.id}}" catchtap="onClose">结束</view>
+          </block>
+          <view class="btn btn--small btn--danger" hover-class="btn-hover" data-id="{{item.id}}" catchtap="onDelete">删除</view>
+        </view>
+      </post-card>
+      <view class="list-footer">
+        <text wx:if="{{loadingMore}}">加载中…</text>
+        <text wx:elif="{{moreError}}" class="retry" bindtap="loadMore">加载失败，点击重试</text>
+        <text wx:elif="{{hasMore}}">上拉加载更多</text>
+        <text wx:else>已满员、已关闭、已过期的信息不能重新开启，需要时请重新发布</text>
+      </view>
+    </block>
+  </block>
+
+  <view wx:if="{{dev}}" class="card dev">
+    <view class="section-title dev-title">模拟调试（仅 mock 模式）</view>
+    <view class="dev-row">
+      <text>当前模拟用户</text>
+      <view class="dev-users">
+        <view wx:for="{{dev.users}}" wx:key="openid"
+              class="dev-user {{dev.currentOpenid === item.openid ? 'dev-user--on' : ''}}"
+              data-openid="{{item.openid}}" bindtap="onDevSwitchUser">{{item.name}}</view>
+      </view>
+    </view>
+    <view class="dev-row">
+      <text>模拟网络故障</text>
+      <switch checked="{{dev.offline}}" color="#d33a2c" bindchange="onDevToggleOffline" />
+    </view>
+    <view class="btn-row dev-btns">
+      <view class="btn btn--small" hover-class="btn-hover" bindtap="onDevLogout">退出登录</view>
+      <view class="btn btn--small btn--danger" hover-class="btn-hover" bindtap="onDevReset">重置模拟数据</view>
+    </view>
+  </view>
+</view>

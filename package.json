@@ -1,0 +1,8 @@
+{
+  "name": "apex-team",
+  "private": true,
+  "description": "Apex 组队微信小程序前端",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  }
+}

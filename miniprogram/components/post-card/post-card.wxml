@@ -1,0 +1,20 @@
+<view class="card post-card" hover-class="btn-hover" bindtap="onTap">
+  <view class="row">
+    <view class="rank">{{post.rankName}}</view>
+    <view wx:if="{{showStatus}}" class="tag tag--{{post.status}}">{{post.statusText}}</view>
+    <view wx:else class="slots {{post.remainingSlots === 1 ? 'slots--hot' : ''}}">{{post.remainingText}}</view>
+  </view>
+  <view class="meta">
+    <text class="mode">{{post.modeName}}</text>
+    <text class="dot">·</text>
+    <text>{{post.serverName}}</text>
+    <text class="dot">·</text>
+    <text>{{post.currentPlayers}}/{{post.maxPlayers}} 人</text>
+  </view>
+  <view wx:if="{{post.note}}" class="note">{{post.note}}</view>
+  <view class="foot">
+    <text>{{post.publishTimeText}}</text>
+    <text wx:if="{{post.expireText}}">{{post.expireText}}</text>
+  </view>
+  <slot></slot>
+</view>

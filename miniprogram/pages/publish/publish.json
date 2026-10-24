@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "发布组队",
+  "usingComponents": {
+    "post-form": "/components/post-form/post-form"
+  }
+}

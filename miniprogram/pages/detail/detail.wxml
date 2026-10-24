@@ -1,0 +1,51 @@
+<mock-banner />
+
+<state-view wx:if="{{status === 'loading'}}" status="loading" />
+<state-view wx:elif="{{status === 'error'}}" status="error" message="{{errorMessage}}" bindaction="onRetry" />
+<state-view wx:elif="{{status === 'notfound'}}" status="empty" message="信息不存在或已删除"
+            actionText="返回组队大厅" bindaction="onBackToHall" />
+
+<view wx:else class="container">
+  <view class="card">
+    <view class="head">
+      <view class="rank">{{post.rankName}}</view>
+      <view class="tag tag--{{post.status}}">{{post.statusText}}</view>
+    </view>
+    <view class="count">
+      <text class="count-num">{{post.currentPlayers}}</text>/{{post.maxPlayers}} 人
+      <text class="count-note">{{post.remainingText}}</text>
+    </view>
+
+    <view class="rows">
+      <view class="kv"><text class="k">服务器</text><text class="v">{{post.serverName}}</text></view>
+      <view class="kv"><text class="k">游戏模式</text><text class="v">{{post.modeName}}</text></view>
+      <view class="kv"><text class="k">发布时间</text><text class="v">{{post.publishTimeText}}</text></view>
+      <view wx:if="{{post.expireText}}" class="kv"><text class="k">有效期</text><text class="v">{{post.expireText}}</text></view>
+    </view>
+
+    <view class="note-box">
+      <view class="k">备注</view>
+      <view class="note">{{post.note || '无'}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{post.status !== 'RECRUITING'}}" class="card notice notice--off">{{post.statusNote}}</view>
+
+  <view class="card">
+    <view class="notice-text">请在游戏内联系，人数由发布者手动更新。</view>
+    <view class="hint">复制游戏 ID 不会占用名额，也不代表加入成功。</view>
+    <view class="btn btn--primary contact {{post.status !== 'RECRUITING' || copying ? 'btn--disabled' : ''}}"
+          hover-class="{{post.status === 'RECRUITING' ? 'btn-hover' : 'none'}}" bindtap="onCopyContact">
+      {{post.status !== 'RECRUITING' ? '当前不可联系' : copying ? '正在确认…' : '复制游戏 ID'}}
+    </view>
+  </view>
+
+  <view wx:if="{{post.canEdit || post.canClose || post.canDelete}}" class="card">
+    <view class="section-title manage-title">管理我的发布</view>
+    <view class="btn-row">
+      <view wx:if="{{post.canEdit}}" class="btn" hover-class="btn-hover" bindtap="onEdit">编辑</view>
+      <view wx:if="{{post.canClose}}" class="btn" hover-class="btn-hover" bindtap="onClose">结束招募</view>
+      <view wx:if="{{post.canDelete}}" class="btn btn--danger" hover-class="btn-hover" bindtap="onDelete">删除</view>
+    </view>
+  </view>
+</view>

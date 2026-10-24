@@ -1,0 +1,51 @@
+<mock-banner />
+
+<view class="filters">
+  <picker range="{{modeOptions}}" range-key="name" value="{{modeIndex}}" bindchange="onModeChange" disabled="{{configStatus !== 'ready'}}">
+    <view class="filter {{modeIndex ? 'filter--on' : ''}}">
+      模式：{{modeOptions[modeIndex].name}}<text class="arrow">▾</text>
+    </view>
+  </picker>
+  <picker range="{{rankOptions}}" range-key="name" value="{{rankIndex}}" bindchange="onRankChange" disabled="{{configStatus !== 'ready'}}">
+    <view class="filter {{rankIndex ? 'filter--on' : ''}}">
+      段位：{{rankOptions[rankIndex].name}}<text class="arrow">▾</text>
+    </view>
+  </picker>
+  <picker range="{{serverOptions}}" range-key="name" value="{{serverIndex}}" bindchange="onServerChange" disabled="{{configStatus !== 'ready'}}">
+    <view class="filter {{serverIndex ? 'filter--on' : ''}}">
+      服务器：{{serverOptions[serverIndex].name}}<text class="arrow">▾</text>
+    </view>
+  </picker>
+  <view class="segment">
+    <view wx:for="{{remainingOptions}}" wx:key="name"
+          class="seg {{remainingIndex === index ? 'seg--on' : ''}}"
+          data-index="{{index}}" bindtap="onRemainingTap">{{item.name}}</view>
+  </view>
+</view>
+
+<view class="container">
+  <state-view wx:if="{{configStatus === 'loading'}}" status="loading" />
+  <state-view wx:elif="{{configStatus === 'error'}}" status="error"
+              message="配置加载失败：{{configError}}" bindaction="init" />
+
+  <block wx:else>
+    <state-view wx:if="{{listStatus === 'loading'}}" status="loading" />
+    <state-view wx:elif="{{listStatus === 'error'}}" status="error" message="{{listError}}" bindaction="reload" />
+    <state-view wx:elif="{{listStatus === 'empty'}}" status="empty"
+                message="{{modeIndex || rankIndex || serverIndex || remainingIndex ? '没有符合条件的招募' : '暂时没有招募中的队伍，来发布第一条吧'}}"
+                actionText="{{modeIndex || rankIndex || serverIndex || remainingIndex ? '清除筛选' : ''}}"
+                bindaction="onResetFilters" />
+
+    <block wx:else>
+      <post-card wx:for="{{list}}" wx:key="id" post="{{item}}" bindselect="onSelectPost" />
+      <view class="list-footer">
+        <text wx:if="{{loadingMore}}">加载中…</text>
+        <text wx:elif="{{moreError}}" class="retry" bindtap="loadMore">加载失败，点击重试</text>
+        <text wx:elif="{{hasMore}}">上拉加载更多</text>
+        <text wx:else>没有更多了</text>
+      </view>
+    </block>
+  </block>
+</view>
+
+<view class="fab" hover-class="btn-hover" bindtap="onPublish">＋ 发布组队</view>

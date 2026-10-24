@@ -1,0 +1,7 @@
+.banner {
+  font-size: 22rpx;
+  color: #b76e00;
+  background: #fdf1dc;
+  padding: 10rpx 24rpx;
+  text-align: center;
+}

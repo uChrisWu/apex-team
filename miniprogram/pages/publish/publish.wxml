@@ -1,0 +1,22 @@
+<mock-banner />
+
+<state-view wx:if="{{status === 'loading'}}" status="loading" />
+<state-view wx:elif="{{status === 'error'}}" status="error"
+            message="{{formMode === 'edit' ? '加载失败：' : '配置加载失败，暂时无法提交：'}}{{errorMessage}}" bindaction="onRetry" />
+<state-view wx:elif="{{status === 'login'}}" status="empty" message="编辑信息需要先登录" actionText="登录" bindaction="onRetry" />
+<state-view wx:elif="{{status === 'notfound'}}" status="empty" message="信息不存在或已删除" actionText="返回" bindaction="onBack" />
+<state-view wx:elif="{{status === 'locked'}}" status="empty" message="{{lockedMessage}}" actionText="返回" bindaction="onBack" />
+
+<view wx:else class="container">
+  <view wx:if="{{formMode === 'create' && activePostId}}" class="card active-tip" bindtap="onViewActivePost">
+    你已有一条招募中的信息，发布新信息前需先结束或删除。<text class="link">查看原信息 ›</text>
+  </view>
+
+  <post-form config="{{config}}" formMode="{{formMode}}" value="{{value}}" submitting="{{submitting}}"
+             submitText="{{formMode === 'edit' ? '保存修改' : '发布'}}" bindsubmit="onSubmit" />
+
+  <view class="hint foot-note">
+    <block wx:if="{{formMode === 'create'}}">发布后 2 小时自动过期。人数需要你在组到队友后手动更新。</block>
+    <block wx:else>编辑不会延长有效期；人数改为 3/3 后将显示“已满员”并从大厅移除。</block>
+  </view>
+</view>
