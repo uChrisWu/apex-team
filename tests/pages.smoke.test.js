@@ -24,11 +24,18 @@ global.wx = {
   showLoading: () => {},
   hideLoading: () => {},
   stopPullDownRefresh: () => {},
+  setTabBarBadge: (opts) => {
+    calls.badge = opts.text;
+  },
+  removeTabBarBadge: () => {
+    calls.badge = null;
+  },
   setNavigationBarTitle: () => {},
   setClipboardData: ({ data }) => {
     calls.clipboard.push(data);
     return Promise.resolve();
   },
+  showActionSheet: () => Promise.resolve({ tapIndex: 0 }),
   navigateTo: ({ url }) => calls.nav.push(['navigateTo', url]),
   redirectTo: ({ url }) => calls.nav.push(['redirectTo', url]),
   switchTab: ({ url }) => calls.nav.push(['switchTab', url]),
@@ -139,7 +146,7 @@ test('mock 模式下主要页面流程', async (t) => {
     assert.equal(publish.data.status, 'ready');
     const values = {
       rankCode: 'GOLD',
-      serverCode: 'TEST_TOKYO',
+      serverCode: 'TOKYO',
       currentPlayers: 1,
       modeCode: 'RANKED',
       gameId: 'MyApexId',
@@ -189,7 +196,7 @@ test('mock 模式下主要页面流程', async (t) => {
     devtools.resetData();
     await auth.refresh();
     const created = await api.createPost(
-      { rankCode: 'ANY', serverCode: 'TEST_HONGKONG', currentPlayers: 1, modeCode: 'RANKED', gameId: 'X', note: '' },
+      { rankCode: 'ANY', serverCode: 'HONG_KONG', currentPlayers: 1, modeCode: 'RANKED', gameId: 'X', note: '' },
       'conflict-req'
     );
     const edit = loadPage('publish');
@@ -226,9 +233,65 @@ test('mock 模式下主要页面流程', async (t) => {
     assert.equal(mine.data.listStatus, 'empty');
   });
 
+  await t.test('申请加入：申请人提交，房主看到提醒并同意后人数 +1', async () => {
+    // 当前登录为用户 A；A 先发布一条 1/3 的招募
+    devtools.resetData();
+    await auth.refresh();
+    const created = await api.createPost(
+      { modeCode: 'RANKED', rankCode: 'GOLD', serverCode: 'TOKYO', currentPlayers: 1, gameId: 'Owner', note: '' },
+      'apply-flow'
+    );
+
+    // 切换到用户 B 申请
+    devtools.switchUser('mock-openid-b');
+    auth.logout();
+    await auth.login();
+    const detail = loadPage('detail');
+    detail.onLoad({ id: created.id });
+    await settle();
+    assert.equal(detail.data.post.canDelete, false);
+    await detail.onOpenApply();
+    await settle();
+    assert.equal(detail.data.applyOpen, true);
+    detail.onApplyInput({ currentTarget: { dataset: { field: 'gameId' } }, detail: { value: 'Wraith_B' } });
+    detail.onApplyInput({ currentTarget: { dataset: { field: 'message' } }, detail: { value: '开麦' } });
+    await detail.onSubmitApply();
+    assert.equal(detail.data.applyOpen, false);
+    assert.equal(detail.data.myRequest.status, 'PENDING');
+
+    // 举报：选择第一个原因后提示已收到；再次举报提示已举报过
+    calls.toast.length = 0;
+    await detail.onReport();
+    await detail.onReport();
+    assert.deepEqual(calls.toast.slice(-2), ['已收到举报，我们会尽快处理', '你已举报过这条信息']);
+
+    // 切回用户 A：标签显示待处理数量，我的发布与详情可处理申请
+    devtools.switchUser('mock-openid-a');
+    auth.logout();
+    await auth.login();
+    assert.equal(calls.badge, '1');
+    const mine = loadPage('mine');
+    mine.onShow();
+    await settle();
+    assert.equal(mine.data.list[0].pendingRequestCount, 1);
+
+    const ownerDetail = loadPage('detail');
+    ownerDetail.onLoad({ id: created.id });
+    await settle();
+    assert.equal(ownerDetail.data.requests.length, 1);
+    assert.equal(ownerDetail.data.requests[0].applicantGameId, 'Wraith_B');
+    await ownerDetail.onDecide({ currentTarget: { dataset: { id: ownerDetail.data.requests[0].id, decision: 'ACCEPT' } } });
+    await settle();
+    assert.equal(ownerDetail.data.post.currentPlayers, 2);
+    assert.equal(ownerDetail.data.requests[0].status, 'ACCEPTED');
+    assert.equal(calls.badge, null, '处理后清除标签提醒');
+    devtools.resetData();
+    await auth.refresh();
+  });
+
   await t.test('详情：他人记录无管理入口，切换用户后本人记录有', async () => {
     const created = await api.createPost(
-      { rankCode: 'ANY', serverCode: 'TEST_HONGKONG', currentPlayers: 2, modeCode: 'TRIOS', gameId: 'Owner', note: '' },
+      { rankCode: 'ANY', serverCode: 'HONG_KONG', currentPlayers: 2, modeCode: 'TRIOS', gameId: 'Owner', note: '' },
       'owner-req'
     );
     devtools.switchUser('mock-openid-b');

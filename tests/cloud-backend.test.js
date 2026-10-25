@@ -3,24 +3,31 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createService } = require('../cloudfunctions/apex/service');
-const { TEST_CONFIG } = require('../miniprogram/services/mock/fixtures');
+const { APP_CONFIG } = require('../miniprogram/services/mock/fixtures');
 
-function memoryStore(config = TEST_CONFIG) {
+function memoryStore(config = APP_CONFIG) {
   const users = new Map();
   const posts = new Map();
+  const requests = new Map();
+  const reports = new Map();
   const stats = { configReads: 0 };
   const copy = (v) => (v ? structuredClone(v) : null);
+  const anyMatch = (code, value) => value === code || (code !== 'ANY' && value === 'ANY');
   let queue = Promise.resolve();
 
   const reader = {
     getUser: async (openid) => copy(users.get(openid)),
     getPost: async (id) => copy(posts.get(id)),
+    getRequest: async (id) => copy(requests.get(id)),
+    getReport: async (id) => copy(reports.get(id)),
   };
 
   const store = Object.assign({}, reader, {
     stats,
     users,
     posts,
+    requests,
+    reports,
     async getConfig() {
       stats.configReads += 1;
       return copy(config);
@@ -36,15 +43,25 @@ function memoryStore(config = TEST_CONFIG) {
           if (ownerId) return p.ownerId === ownerId;
           if (p.status !== 'RECRUITING' || p.expiresAt <= publicAt) return false;
           if (filters.modeCode && p.modeCode !== filters.modeCode) return false;
-          if (filters.rankCode && p.rankCode !== filters.rankCode && p.rankCode !== 'ANY') return false;
-          if (filters.serverCode && p.serverCode !== filters.serverCode) return false;
-          if (filters.currentPlayers && p.currentPlayers !== filters.currentPlayers) return false;
+          if (filters.rankCode && !anyMatch(filters.rankCode, p.rankCode)) return false;
+          if (filters.serverCode && !anyMatch(filters.serverCode, p.serverCode)) return false;
+          if (filters.remainingSlots && p.remainingSlots !== filters.remainingSlots) return false;
           return true;
         })
         .filter((p) => !after || p.createdAt < after.createdAt || (+p.createdAt === +after.createdAt && p.id < after.id))
         .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1))
         .slice(0, limit)
         .map(copy);
+    },
+    async listRequests(postId) {
+      return [...requests.values()].filter((r) => r.postId === postId).map(copy);
+    },
+    async countPendingRequests(postId) {
+      return [...requests.values()].filter((r) => r.postId === postId && r.status === 'PENDING').length;
+    },
+    async getOpenidByUserId(userId) {
+      const hit = [...users.values()].find((u) => u.userId === userId);
+      return hit ? hit.openid : null;
     },
     // 事务串行执行；回调抛错时丢弃全部写入，模拟回滚
     transaction(fn) {
@@ -54,6 +71,9 @@ function memoryStore(config = TEST_CONFIG) {
           createPost: async (post) => writes.push(() => posts.set(post.id, copy(post))),
           updatePost: async (id, patch) => writes.push(() => posts.set(id, Object.assign(posts.get(id), copy(patch)))),
           updateUser: async (openid, patch) => writes.push(() => users.set(openid, Object.assign(users.get(openid), copy(patch)))),
+          createRequest: async (r) => writes.push(() => requests.set(r.id, copy(r))),
+          updateRequest: async (id, patch) => writes.push(() => requests.set(id, Object.assign(requests.get(id), copy(patch)))),
+          createReport: async (r) => writes.push(() => reports.set(r.id, copy(r))),
         });
         const result = await fn(tx);
         writes.forEach((w) => w());
@@ -66,16 +86,42 @@ function memoryStore(config = TEST_CONFIG) {
   return store;
 }
 
-const FORM = { modeCode: 'RANKED', rankCode: 'GOLD', serverCode: 'TEST_TOKYO', currentPlayers: 1, gameId: '  PlayerA ', note: '开麦' };
+// 微信开放能力的替身：包含“违规”的文字判为 risky；记录发送的订阅消息
+function fakeWechat() {
+  const sent = [];
+  const checks = [];
+  return {
+    sent,
+    checks,
+    failChecks: false,
+    async checkText(openid, content) {
+      checks.push({ openid, content });
+      if (this.failChecks) throw Object.assign(new Error('msgSecCheck unavailable'), { errCode: -604101 });
+      return content.includes('违规') ? 'risky' : 'pass';
+    },
+    async sendSubscribeMessage(message) {
+      sent.push(message);
+    },
+  };
+}
+
+const NOTIFY_CONFIG = Object.assign({}, APP_CONFIG, {
+  notify: { templateId: 'tmpl-1', fields: { applicant: 'thing1', post: 'thing2', time: 'time3', content: 'thing4' }, miniprogramState: 'trial' },
+});
+
+const FORM = { modeCode: 'RANKED', rankCode: 'GOLD', serverCode: 'TOKYO', currentPlayers: 1, gameId: '  PlayerA ', note: '开麦' };
 const A = 'openid-a';
 const B = 'openid-b';
+const C = 'openid-c';
 
 function setup(opts = {}) {
   const clock = { t: Date.parse('2026-10-25T12:00:00Z') };
   const store = memoryStore(opts.config);
+  const wechat = fakeWechat();
   const logs = [];
   const service = createService({
     store,
+    wechat,
     now: () => new Date(clock.t),
     clock: () => clock.t,
     log: { info: (m) => logs.push(m), error: (m) => logs.push(m) },
@@ -86,7 +132,7 @@ function setup(opts = {}) {
     assert.equal(res.code, 'OK', `${action}: ${res.code} ${res.message}`);
     return res.data;
   };
-  return { clock, store, call, ok, logs };
+  return { clock, store, wechat, call, ok, logs };
 }
 
 async function login(ok, ...openids) {
@@ -98,7 +144,7 @@ test('第 6 节最小端到端流程', async () => {
   await login(ok, A, B);
   const created = await ok('createPost', Object.assign({ requestId: 'r1' }, FORM), A);
 
-  const hall = await ok('listPosts', { modeCode: 'RANKED', rankCode: 'GOLD', serverCode: 'TEST_TOKYO' }, null);
+  const hall = await ok('listPosts', { modeCode: 'RANKED', rankCode: 'GOLD', serverCode: 'TOKYO' }, null);
   assert.deepEqual(hall.items.map((p) => p.id), [created.id]);
   assert.equal(hall.items[0].gameId, undefined);
 
@@ -278,4 +324,222 @@ test('数据库异常不外泄，日志不含身份与游戏 ID', async () => {
 test('配置缺失时返回 INTERNAL_ERROR', async () => {
   const { call } = setup({ config: null });
   assert.equal((await call('getConfig', {}, null)).code, 'INTERNAL_ERROR');
+});
+
+// ---------- 配置清单：按模式的人数上限、服务器“不限”、选项启停 ----------
+
+test('人数上限按模式：双人模式最多 2 人', async () => {
+  const { call, ok } = setup();
+  await login(ok, A);
+  const duo = Object.assign({}, FORM, { modeCode: 'DUOS' });
+  assert.equal((await call('createPost', Object.assign({ requestId: 'd0' }, duo, { currentPlayers: 2 }), A)).code, 'VALIDATION_ERROR');
+  const post = await ok('createPost', Object.assign({ requestId: 'd1' }, duo), A);
+  const view = await ok('getPost', { postId: post.id }, A);
+  assert.equal(view.maxPlayers, 2);
+  assert.equal(view.remainingSlots, 1);
+  assert.equal((await call('updatePost', Object.assign({}, duo, { postId: post.id, version: 1, currentPlayers: 3 }), A)).code, 'VALIDATION_ERROR');
+  // 改为三人模式后上限随之变化
+  const trio = await ok('updatePost', Object.assign({}, FORM, { postId: post.id, version: 1, currentPlayers: 2 }), A);
+  assert.equal(trio.maxPlayers, 3);
+  assert.equal(trio.status, 'RECRUITING');
+  assert.equal((await ok('listPosts', { remainingSlots: 1 }, null)).items.length, 1);
+});
+
+test('服务器“不限”在具体服务器筛选中出现，“其他”只精确匹配', async () => {
+  const { clock, ok } = setup();
+  for (const [i, serverCode] of ['ANY', 'TOKYO', 'OTHER', 'SINGAPORE'].entries()) {
+    const o = `srv-${i}`;
+    await ok('ensureUser', {}, o);
+    clock.t += 1000;
+    await ok('createPost', Object.assign({}, FORM, { requestId: `s${i}`, serverCode }), o);
+  }
+  const servers = async (serverCode) => (await ok('listPosts', { serverCode }, null)).items.map((p) => p.serverCode).sort();
+  assert.deepEqual(await servers('TOKYO'), ['ANY', 'TOKYO']);
+  assert.deepEqual(await servers('OTHER'), ['ANY', 'OTHER']);
+  assert.deepEqual(await servers('ANY'), ['ANY']);
+});
+
+test('停用的选项不能用于发布，历史记录仍可显示', async () => {
+  const config = structuredClone(APP_CONFIG);
+  const { clock, call, ok } = setup({ config });
+  await login(ok, A, B);
+  const post = await ok('createPost', Object.assign({ requestId: 'x' }, FORM, { modeCode: 'LTM' }), A);
+  config.modes.find((m) => m.code === 'LTM').enabled = false;
+  clock.t += 61000; // 超过配置缓存时间
+  assert.equal((await call('createPost', Object.assign({ requestId: 'y' }, FORM, { modeCode: 'LTM' }), B)).code, 'VALIDATION_ERROR');
+  assert.equal((await ok('getPost', { postId: post.id }, null)).modeCode, 'LTM');
+  assert.equal((await call('listPosts', { modeCode: 'LTM' }, null)).code, 'OK', '筛选仍接受已有代码');
+});
+
+// ---------- 申请加入 ----------
+
+async function postWithApplicants(t, ...applicants) {
+  await login(t.ok, A, ...applicants);
+  return t.ok('createPost', Object.assign({ requestId: 'team' }, FORM), A);
+}
+
+test('申请、提醒数量、申请人状态与重复申请', async () => {
+  const t = setup();
+  const post = await postWithApplicants(t, B);
+  const req = await t.ok('applyToPost', { postId: post.id, gameId: ' Wraith_B ', message: '常玩恶灵' }, B);
+  assert.equal(req.status, 'PENDING');
+  assert.equal(req.applicantGameId, 'Wraith_B');
+  assert.equal((await t.ok('ensureUser', {}, A)).pendingRequestCount, 1);
+  assert.equal((await t.ok('listMyPosts', {}, A)).items[0].pendingRequestCount, 1);
+  assert.equal((await t.ok('getPost', { postId: post.id }, B)).myRequest.status, 'PENDING');
+  assert.equal((await t.ok('getPost', { postId: post.id }, A)).myRequest, undefined, '房主详情不含 myRequest');
+  assert.equal((await t.ok('ensureUser', {}, B)).lastGameId, 'Wraith_B', '记住申请人的游戏 ID 便于下次预填');
+
+  const again = await t.ok('applyToPost', { postId: post.id, gameId: 'Other', message: '' }, B);
+  assert.equal(again.id, req.id);
+  assert.equal(again.applicantGameId, 'Wraith_B', '重复申请返回原申请');
+  assert.equal((await t.ok('listPostRequests', { postId: post.id }, A)).items.length, 1);
+
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: 'me' }, A)).code, 'FORBIDDEN');
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: 'x' }, null)).code, 'UNAUTHENTICATED');
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: '  ' }, B)).code, 'VALIDATION_ERROR');
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: 'x', message: 'm'.repeat(51) }, B)).code, 'VALIDATION_ERROR');
+  assert.equal((await t.call('listPostRequests', { postId: post.id }, B)).code, 'FORBIDDEN', '只有房主能查看申请');
+});
+
+test('同意即人数 +1；凑满后满员，其余待处理申请失效', async () => {
+  const t = setup();
+  const post = await postWithApplicants(t, B, C);
+  await t.ok('updatePost', Object.assign({}, FORM, { postId: post.id, version: 1, currentPlayers: 2 }), A);
+  const rb = await t.ok('applyToPost', { postId: post.id, gameId: 'B' }, B);
+  const rc = await t.ok('applyToPost', { postId: post.id, gameId: 'C' }, C);
+
+  assert.equal((await t.call('decideRequest', { requestId: rb.id, decision: 'ACCEPT' }, B)).code, 'FORBIDDEN');
+  const res = await t.ok('decideRequest', { requestId: rb.id, decision: 'ACCEPT' }, A);
+  assert.equal(res.request.status, 'ACCEPTED');
+  assert.equal(res.post.currentPlayers, 3);
+  assert.equal(res.post.status, 'FULL');
+  assert.equal(res.post.version, 3);
+
+  assert.equal((await t.ok('getPost', { postId: post.id }, C)).myRequest.status, 'EXPIRED');
+  assert.equal((await t.call('decideRequest', { requestId: rc.id, decision: 'ACCEPT' }, A)).code, 'POST_UNAVAILABLE');
+  assert.equal((await t.call('decideRequest', { requestId: rb.id, decision: 'REJECT' }, A)).code, 'POST_UNAVAILABLE');
+  const owner = await t.ok('ensureUser', {}, A);
+  assert.equal(owner.hasActivePost, false, '满员后释放有效招募引用');
+  assert.equal(owner.pendingRequestCount, 0);
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: 'late' }, 'openid-d')).code, 'UNAUTHENTICATED');
+});
+
+test('并发同意不会超过人数上限', async () => {
+  const t = setup();
+  const post = await postWithApplicants(t, B, C);
+  await t.ok('updatePost', Object.assign({}, FORM, { postId: post.id, version: 1, currentPlayers: 2 }), A);
+  const rb = await t.ok('applyToPost', { postId: post.id, gameId: 'B' }, B);
+  const rc = await t.ok('applyToPost', { postId: post.id, gameId: 'C' }, C);
+  const results = await Promise.all([rb, rc].map((r) => t.call('decideRequest', { requestId: r.id, decision: 'ACCEPT' }, A)));
+  assert.deepEqual(results.map((r) => r.code).sort(), ['OK', 'POST_UNAVAILABLE']);
+  assert.equal((await t.ok('getPost', { postId: post.id }, A)).currentPlayers, 3);
+});
+
+test('拒绝、撤回与重新申请', async () => {
+  const t = setup();
+  const post = await postWithApplicants(t, B, C);
+  const rb = await t.ok('applyToPost', { postId: post.id, gameId: 'B' }, B);
+  await t.ok('cancelApplication', { postId: post.id }, B);
+  assert.equal((await t.ok('listPostRequests', { postId: post.id }, A)).items.length, 0, '撤回的申请不展示给房主');
+  assert.equal((await t.call('cancelApplication', { postId: post.id }, B)).code, 'VALIDATION_ERROR');
+  const again = await t.ok('applyToPost', { postId: post.id, gameId: 'B2' }, B);
+  assert.equal(again.id, rb.id);
+  assert.equal(again.status, 'PENDING');
+  assert.equal(again.applicantGameId, 'B2');
+
+  const rc = await t.ok('applyToPost', { postId: post.id, gameId: 'C' }, C);
+  const rejected = await t.ok('decideRequest', { requestId: rc.id, decision: 'REJECT' }, A);
+  assert.equal(rejected.request.status, 'REJECTED');
+  assert.equal(rejected.post.currentPlayers, 1, '拒绝不改变人数');
+  assert.equal((await t.call('decideRequest', { requestId: rc.id, decision: 'ACCEPT' }, A)).code, 'VALIDATION_ERROR', '已处理的申请不能再处理');
+  assert.equal((await t.ok('applyToPost', { postId: post.id, gameId: 'C' }, C)).status, 'REJECTED', '被拒绝后不能重复申请');
+
+  const list = await t.ok('listPostRequests', { postId: post.id }, A);
+  assert.deepEqual(list.items.map((r) => r.status), ['PENDING', 'REJECTED'], '待处理的排在前面');
+});
+
+test('订阅消息：新申请提醒房主，失败不影响申请', async () => {
+  const t = setup({ config: NOTIFY_CONFIG });
+  const post = await postWithApplicants(t, B, C);
+  await t.ok('applyToPost', { postId: post.id, gameId: 'Wraith_B', message: '你好' }, B);
+  assert.equal(t.wechat.sent.length, 1);
+  const msg = t.wechat.sent[0];
+  assert.equal(msg.touser, A);
+  assert.equal(msg.templateId, 'tmpl-1');
+  assert.equal(msg.page, `pages/detail/detail?id=${post.id}`);
+  assert.equal(msg.miniprogramState, 'trial');
+  assert.equal(msg.data.thing1.value, 'Wraith_B');
+  assert.equal(msg.data.thing2.value, '排位赛 · 东京（日服） 1/3');
+  assert.equal(msg.data.time3.value, '2026-10-25 20:00', '按北京时间显示');
+  assert.equal(msg.data.thing4.value, '申请加入排位赛：你好');
+
+  await t.ok('applyToPost', { postId: post.id, gameId: 'Wraith_B' }, B);
+  assert.equal(t.wechat.sent.length, 1, '重复申请不重复提醒');
+
+  t.wechat.sendSubscribeMessage = async () => {
+    throw Object.assign(new Error('quota'), { errCode: 43101 });
+  };
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: 'C' }, C)).code, 'OK');
+});
+
+test('未配置模板时不发送提醒，getConfig 只公开模板 ID', async () => {
+  const t = setup({ config: Object.assign({}, APP_CONFIG, { notify: { templateId: '' } }) });
+  const post = await postWithApplicants(t, B);
+  await t.ok('applyToPost', { postId: post.id, gameId: 'B' }, B);
+  assert.equal(t.wechat.sent.length, 0);
+  const n = setup({ config: NOTIFY_CONFIG });
+  assert.deepEqual((await n.ok('getConfig', {}, null)).notify, { templateId: 'tmpl-1' });
+  assert.deepEqual((await setup().ok('getConfig', {}, null)).notify, { templateId: APP_CONFIG.notify.templateId }, '字段对应关系不公开');
+});
+
+// ---------- 内容安全 ----------
+
+test('内容安全：违规内容拒绝写入，检测异常时不放行', async () => {
+  const t = setup();
+  await login(t.ok, A, B);
+  assert.equal((await t.call('createPost', Object.assign({ requestId: 'r' }, FORM, { note: '违规内容' }), A)).code, 'CONTENT_RISKY');
+  assert.equal((await t.call('createPost', Object.assign({ requestId: 'r' }, FORM, { gameId: '违规ID' }), A)).code, 'CONTENT_RISKY');
+  assert.equal((await t.ok('listMyPosts', {}, A)).items.length, 0);
+  assert.deepEqual(t.wechat.checks.map((c) => c.openid), [A, A], '按发布者 OpenID 检测');
+
+  const post = await t.ok('createPost', Object.assign({ requestId: 'r2' }, FORM), A);
+  assert.equal((await t.call('updatePost', Object.assign({}, FORM, { postId: post.id, version: 1, note: '违规' }), A)).code, 'CONTENT_RISKY');
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: 'B', message: '违规留言' }, B)).code, 'CONTENT_RISKY');
+
+  t.wechat.failChecks = true;
+  assert.equal((await t.call('applyToPost', { postId: post.id, gameId: 'B' }, B)).code, 'INTERNAL_ERROR');
+  assert.equal((await t.ok('listPostRequests', { postId: post.id }, A)).items.length, 0);
+});
+
+// ---------- 举报 ----------
+
+test('举报：登录后可举报他人信息，重复举报只记录一次，保存内容快照', async () => {
+  const t = setup();
+  await login(t.ok, A, B);
+  const post = await t.ok('createPost', Object.assign({ requestId: 'rep' }, FORM), A);
+  assert.equal((await t.call('reportPost', { postId: post.id, reason: 'SPAM' }, null)).code, 'UNAUTHENTICATED');
+  assert.equal((await t.call('reportPost', { postId: post.id, reason: 'SPAM' }, A)).code, 'FORBIDDEN');
+  assert.equal((await t.call('reportPost', { postId: post.id, reason: 'NOPE' }, B)).code, 'VALIDATION_ERROR');
+  assert.equal((await t.call('reportPost', { postId: post.id, reason: 'SPAM', extra: 1 }, B)).code, 'VALIDATION_ERROR');
+
+  const first = await t.ok('reportPost', { postId: post.id, reason: 'ABUSE', detail: ' 骂人 ' }, B);
+  assert.equal(first.duplicate, false);
+  const again = await t.ok('reportPost', { postId: post.id, reason: 'SPAM' }, B);
+  assert.equal(again.duplicate, true);
+  assert.equal(t.store.reports.size, 1);
+  const saved = [...t.store.reports.values()][0];
+  assert.equal(saved.reason, 'ABUSE');
+  assert.equal(saved.detail, '骂人');
+  assert.equal(saved.snapshot.gameId, 'PlayerA');
+  assert.equal(saved.status, 'OPEN');
+  assert.ok(!JSON.stringify(saved).includes(B), '举报记录不保存 OpenID');
+
+  // 信息结束后仍可举报，删除后不可
+  await t.ok('closePost', { postId: post.id, version: 1 }, A);
+  await login(t.ok, C);
+  assert.equal((await t.call('reportPost', { postId: post.id, reason: 'FAKE' }, C)).code, 'OK');
+  await t.ok('deletePost', { postId: post.id, version: 2 }, A);
+  assert.equal((await t.call('reportPost', { postId: post.id, reason: 'FAKE' }, 'openid-d')).code, 'UNAUTHENTICATED');
+  assert.ok((await t.ok('getConfig', {}, null)).reportReasons.length >= 1);
 });

@@ -4,6 +4,7 @@ const { decoratePost } = require('../../utils/post-view');
 const { toAppError } = require('../../utils/errors');
 const changes = require('../../utils/changes');
 const { mergeUnique } = require('../../utils/list');
+const { activeOptions } = require('../../utils/validate');
 
 const ALL = { code: '', name: '全部' };
 const REMAINING_OPTIONS = [
@@ -71,9 +72,10 @@ Page({
     }
     this.setData({
       configStatus: 'ready',
-      modeOptions: [ALL].concat(this.config.modes),
-      rankOptions: [ALL].concat(this.config.ranks.filter((r) => r.code !== 'ANY')),
-      serverOptions: [ALL].concat(this.config.servers),
+      // 筛选中不单独列出“不限”：选择具体段位或服务器时，后端会同时返回“不限”的信息
+      modeOptions: [ALL].concat(activeOptions(this.config.modes)),
+      rankOptions: [ALL].concat(activeOptions(this.config.ranks).filter((r) => r.code !== 'ANY')),
+      serverOptions: [ALL].concat(activeOptions(this.config.servers).filter((s) => s.code !== 'ANY')),
     });
     await this.reload();
   },

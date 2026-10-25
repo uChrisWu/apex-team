@@ -2,7 +2,7 @@
   <view class="field">
     <view class="label">游戏模式<text class="req">*</text></view>
     <view class="chips">
-      <view wx:for="{{config.modes}}" wx:key="code"
+      <view wx:for="{{modes}}" wx:key="code"
             class="chip {{form.modeCode === item.code ? 'chip--on' : ''}}"
             data-value="{{item.code}}" bindtap="onModeTap">{{item.name}}</view>
     </view>
@@ -11,9 +11,9 @@
 
   <view class="field">
     <view class="label">目标段位<text class="req">*</text></view>
-    <picker range="{{config.ranks}}" range-key="name" value="{{rankIndex < 0 ? 0 : rankIndex}}" bindchange="onRankChange">
+    <picker range="{{ranks}}" range-key="name" value="{{rankIndex < 0 ? 0 : rankIndex}}" bindchange="onRankChange">
       <view class="picker {{rankIndex < 0 ? 'placeholder' : ''}}">
-        {{rankIndex < 0 ? '请选择要招募的段位' : config.ranks[rankIndex].name}}
+        {{rankIndex < 0 ? '请选择要招募的段位' : ranks[rankIndex].name}}
       </view>
     </picker>
     <view wx:if="{{errors.rankCode}}" class="error">{{errors.rankCode}}</view>
@@ -21,9 +21,9 @@
 
   <view class="field">
     <view class="label">服务器<text class="req">*</text></view>
-    <picker range="{{config.servers}}" range-key="name" value="{{serverIndex < 0 ? 0 : serverIndex}}" bindchange="onServerChange">
+    <picker range="{{servers}}" range-key="name" value="{{serverIndex < 0 ? 0 : serverIndex}}" bindchange="onServerChange">
       <view class="picker {{serverIndex < 0 ? 'placeholder' : ''}}">
-        {{serverIndex < 0 ? '请选择计划游玩的服务器' : config.servers[serverIndex].name}}
+        {{serverIndex < 0 ? '请选择计划游玩的服务器' : servers[serverIndex].name}}
       </view>
     </picker>
     <view wx:if="{{errors.serverCode}}" class="error">{{errors.serverCode}}</view>
@@ -33,13 +33,13 @@
     <view class="label">
       当前人数<text class="req">*</text>
       <text class="label-note">
-        {{form.currentPlayers >= limits.maxPlayers ? '已满员' : '缺 ' + (limits.maxPlayers - form.currentPlayers) + ' 人'}}
+        {{form.currentPlayers >= maxPlayers ? '已满员' : '缺 ' + (maxPlayers - form.currentPlayers) + ' 人'}}
       </text>
     </view>
     <view class="chips">
       <view wx:for="{{counts}}" wx:key="*this"
             class="chip {{form.currentPlayers === item ? 'chip--on' : ''}}"
-            data-value="{{item}}" bindtap="onCountTap">{{item}}/{{limits.maxPlayers}}</view>
+            data-value="{{item}}" bindtap="onCountTap">{{item}}/{{maxPlayers}}</view>
     </view>
     <view wx:if="{{errors.currentPlayers}}" class="error">{{errors.currentPlayers}}</view>
   </view>

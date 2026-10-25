@@ -14,6 +14,14 @@ const STATUS_NOTE = {
   EXPIRED: '招募已超过有效期，无法再联系。',
 };
 
+const REQUEST_STATUS_TEXT = {
+  PENDING: '等待房主处理',
+  ACCEPTED: '房主已同意',
+  REJECTED: '未通过',
+  CANCELLED: '已撤回',
+  EXPIRED: '已失效',
+};
+
 function decoratePost(post, config) {
   const total = post.maxPlayers || (config.limits && config.limits.maxPlayers) || 3;
   const remaining = total - post.currentPlayers;
@@ -27,7 +35,15 @@ function decoratePost(post, config) {
     statusNote: STATUS_NOTE[post.status] || '',
     publishTimeText: formatPublishTime(post.createdAt),
     expireText: post.status === 'RECRUITING' ? formatRemaining(post.expiresAt) : '',
+    pendingRequestCount: post.pendingRequestCount || 0,
   });
 }
 
-module.exports = { decoratePost, STATUS_TEXT };
+function decorateRequest(request) {
+  return Object.assign({}, request, {
+    statusText: REQUEST_STATUS_TEXT[request.status] || request.status,
+    timeText: formatPublishTime(request.createdAt),
+  });
+}
+
+module.exports = { decoratePost, decorateRequest, STATUS_TEXT };

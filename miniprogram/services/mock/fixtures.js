@@ -1,34 +1,73 @@
-// 测试配置：游戏模式、段位和服务器的正式清单尚待确认（需求文档第 7 节），
-// 这里的选项仅用于原型演示，名称中带“测试”标注。
-const TEST_CONFIG = {
+// 应用配置：游戏模式、段位、服务器选项与公开限制。
+// 来源：Apex_Lists_2026-10-25.md（2026-10-25 整理）。云端配置由 scripts/generate-dev-config.js 从这里生成，
+// 模拟模式也直接使用它；前端页面只从 getConfig 读取，不硬编码。
+// 每个选项：code 为稳定的内部 ID；name 为显示名，可单独修改；order 控制排序；
+// enabled 为 false 时不能再用于发布和筛选，但历史记录仍按 name 显示。
+const option = (code, name, order, extra) => Object.assign({ code, name, order, enabled: true }, extra || {});
+
+const APP_CONFIG = {
+  // maxPlayers：该模式的队伍人数上限
   modes: [
-    { code: 'RANKED', name: '排位赛（测试）' },
-    { code: 'TRIOS', name: '三人匹配（测试）' },
-    { code: 'MIXTAPE', name: '混合模式（测试）' },
+    option('RANKED', '排位赛', 0, { maxPlayers: 3 }),
+    option('TRIOS', '三人匹配', 1, { maxPlayers: 3 }),
+    option('DUOS', '双人匹配', 2, { maxPlayers: 2 }),
+    option('WILDCARD', 'Wildcard 外卡模式', 3, { maxPlayers: 3 }),
+    option('MIXTAPE', '混合模式', 4, { maxPlayers: 3 }),
+    option('FIRING_RANGE', '射击训练场', 5, { maxPlayers: 3 }),
+    option('PRIVATE_MATCH', '自定义房间', 6, { maxPlayers: 3 }),
+    option('LTM', '限时活动', 7, { maxPlayers: 3 }),
   ],
+  // ANY 为“不限”：筛选具体段位时也包含 ANY
   ranks: [
-    { code: 'ANY', name: '不限' },
-    { code: 'ROOKIE', name: '菜鸟（测试）' },
-    { code: 'BRONZE', name: '青铜（测试）' },
-    { code: 'SILVER', name: '白银（测试）' },
-    { code: 'GOLD', name: '黄金（测试）' },
-    { code: 'PLATINUM', name: '白金（测试）' },
-    { code: 'DIAMOND', name: '钻石（测试）' },
-    { code: 'MASTER', name: '大师（测试）' },
-    { code: 'PREDATOR', name: '猎杀者（测试）' },
+    option('ANY', '不限', 0),
+    option('ROOKIE', '菜鸟', 1),
+    option('BRONZE', '青铜', 2),
+    option('SILVER', '白银', 3),
+    option('GOLD', '黄金', 4),
+    option('PLATINUM', '白金', 5),
+    option('DIAMOND', '钻石', 6),
+    option('MASTER', '大师', 7),
+    option('PREDATOR', '顶尖猎杀者', 8),
   ],
+  // ANY 为“不限”：筛选具体服务器时也包含 ANY；OTHER 覆盖尚未录入的服务器，按普通选项精确匹配
   servers: [
-    { code: 'TEST_TOKYO', name: '东京（测试）' },
-    { code: 'TEST_HONGKONG', name: '香港（测试）' },
-    { code: 'TEST_SINGAPORE', name: '新加坡（测试）' },
-    { code: 'TEST_FRANKFURT', name: '法兰克福（测试）' },
+    option('ANY', '不限', 0),
+    option('TOKYO', '东京（日服）', 1),
+    option('HONG_KONG', '中国香港（港服）', 2),
+    option('SINGAPORE', '新加坡', 3),
+    option('FRANKFURT', '法兰克福（欧服）', 4),
+    option('US_EAST_VIRGINIA', '北弗吉尼亚（美东）', 5),
+    option('US_EAST_OHIO', '俄亥俄', 6),
+    option('US_WEST_OREGON', '俄勒冈（美西）', 7),
+    option('SAO_PAULO', '圣保罗（巴西服）', 8),
+    option('SYDNEY', '悉尼（澳服）', 9),
+    option('BAHRAIN', '巴林', 10),
+    option('OTHER', '其他', 11),
+  ],
+  // 举报原因：code 稳定，name 可修改
+  reportReasons: [
+    option('SPAM', '广告或引流', 0),
+    option('ABUSE', '辱骂或不友善', 1),
+    option('ILLEGAL', '违法违规', 2),
+    option('FAKE', '虚假信息', 3),
+    option('OTHER', '其他', 4),
   ],
   limits: {
-    maxPlayers: 3,
+    maxPlayers: 3, // 所有模式中的最大队伍人数
     gameIdMaxLength: 64,
     noteMaxLength: 100,
+    applyMessageMaxLength: 50,
+    reportDetailMaxLength: 100,
     expireMinutes: 120,
     pageSize: 20,
+  },
+  // 订阅消息：templateId 留空时不请求订阅、不发送提醒，仅保留小程序内提醒。
+  // fields 把云函数提供的值对应到模板关键词：申请人 = thing1，申请内容 = thing2。
+  // miniprogramState 为点击通知打开的版本：开发测试期间用 developer，正式发布后改为 formal。
+  notify: {
+    templateId: 'HXVFr7_2q6iHrjzJ_Gxw3ng6lnehgx5EO4nvggAxYpQ',
+    fields: { applicant: 'thing1', content: 'thing2' },
+    miniprogramState: 'developer',
   },
 };
 
@@ -45,30 +84,33 @@ const NOTES = [
 
 // 生成若干条其他玩家的招募，发布时间分布在最近 100 分钟内
 function seedPosts(now) {
-  const ranks = TEST_CONFIG.ranks.map((r) => r.code);
-  const servers = TEST_CONFIG.servers.map((s) => s.code);
-  const modes = TEST_CONFIG.modes.map((m) => m.code);
+  const modes = APP_CONFIG.modes;
+  const ranks = APP_CONFIG.ranks.map((r) => r.code);
+  const servers = APP_CONFIG.servers.filter((s) => s.code !== 'OTHER').map((s) => s.code);
   const posts = [];
   for (let i = 0; i < 26; i++) {
     const created = now - i * 4 * 60000 - 30000;
+    const mode = modes[i % 4 === 3 ? 4 : i % 3];
+    const currentPlayers = Math.min(i % 3 === 0 ? 2 : 1, mode.maxPlayers - 1);
     posts.push({
       id: `seed-${String(i + 1).padStart(3, '0')}`,
       ownerOpenid: `mock-openid-seed-${i + 1}`,
-      modeCode: modes[i % 4 === 3 ? 2 : i % 2],
+      modeCode: mode.code,
       rankCode: ranks[(i * 5) % ranks.length],
       serverCode: servers[i % servers.length],
       gameId: `SeedPlayer_${i + 1}`,
-      currentPlayers: i % 3 === 0 ? 2 : 1,
+      currentPlayers,
+      maxPlayers: mode.maxPlayers,
       note: NOTES[i % NOTES.length],
       status: 'RECRUITING',
       deleted: false,
       createdAt: new Date(created).toISOString(),
       updatedAt: new Date(created).toISOString(),
-      expiresAt: new Date(created + TEST_CONFIG.limits.expireMinutes * 60000).toISOString(),
+      expiresAt: new Date(created + APP_CONFIG.limits.expireMinutes * 60000).toISOString(),
       version: 1,
     });
   }
   return posts;
 }
 
-module.exports = { TEST_CONFIG, seedPosts };
+module.exports = { APP_CONFIG, seedPosts };

@@ -18,6 +18,9 @@
                 actionText="去发布" bindaction="onPublish" />
     <block wx:else>
       <post-card wx:for="{{list}}" wx:key="id" post="{{item}}" showStatus bindselect="onSelectPost">
+        <view wx:if="{{item.pendingRequestCount}}" class="pending" data-id="{{item.id}}" catchtap="onViewRequests">
+          {{item.pendingRequestCount}} 条入队申请待处理<text class="pending-link">去处理 ›</text>
+        </view>
         <view class="actions">
           <block wx:if="{{item.status === 'RECRUITING'}}">
             <view class="btn btn--small" hover-class="btn-hover" data-id="{{item.id}}" catchtap="onEdit">编辑</view>

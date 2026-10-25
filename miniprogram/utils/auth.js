@@ -9,14 +9,26 @@ let user = null;
 let pending = null;
 let revision = 0;
 
+const MINE_TAB_INDEX = 1;
+
+// “我的发布”标签显示待处理的入队申请数量
+function syncBadge() {
+  const count = (user && user.pendingRequestCount) || 0;
+  const noop = () => {};
+  if (count > 0) wx.setTabBarBadge({ index: MINE_TAB_INDEX, text: count > 99 ? '99+' : String(count), fail: noop });
+  else wx.removeTabBarBadge({ index: MINE_TAB_INDEX, fail: noop });
+}
+
 function login() {
   if (!pending) {
     pending = api
       .ensureUser()
       .then((data) => {
+        // 只在登录身份变化时递增，刷新待处理数量等信息不触发页面整体重载
+        if (!user || user.userId !== data.userId) revision += 1;
         user = data;
-        revision += 1;
         wx.setStorageSync(LOGGED_IN_KEY, true);
+        syncBadge();
         return user;
       })
       .finally(() => {
@@ -58,6 +70,7 @@ function logout() {
   user = null;
   revision += 1;
   wx.removeStorageSync(LOGGED_IN_KEY);
+  syncBadge();
 }
 
 // 发布、结束、删除后刷新“是否有有效招募”

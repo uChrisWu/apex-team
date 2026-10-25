@@ -1,12 +1,14 @@
-// 模拟后端：在本机按 V0.3 接口约定实现业务规则，供原型演示和自动化测试使用。
+// 模拟后端：在本机按接口约定实现业务规则，供离线演示和自动化测试使用；规则与云函数 service.js 保持一致。
 // 不依赖 wx，存储通过 load/save 注入，因此也能在 Node 中运行。
-const { TEST_CONFIG, seedPosts } = require('./fixtures');
-const { validatePostForm, FORM_FIELDS } = require('../../utils/validate');
+// 内容安全检测在模拟模式下用关键词“违规”代替微信接口。
+const { APP_CONFIG, seedPosts } = require('./fixtures');
+const { validatePostForm, validateApplyForm, FORM_FIELDS } = require('../../utils/validate');
 
 const MAX_PAGE_SIZE = 50;
+const MOCK_RISKY_WORD = '违规';
 
 function createMockBackend({ load, save, now = () => Date.now() }) {
-  let db = load() || freshDb(now());
+  let db = normalize(load()) || freshDb(now());
 
   function persist() {
     save(db);
@@ -16,8 +18,8 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
     return { code: 'OK', data, requestId: requestId || traceId() };
   }
 
-  function fail(code, message, extra) {
-    return Object.assign({ code, message, requestId: traceId() }, extra || {});
+  function fail(code, message, data) {
+    return Object.assign({ code, message, requestId: traceId() }, data ? { data } : {});
   }
 
   function traceId() {
@@ -31,24 +33,39 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
     return post.status;
   }
 
+  function isActive(post) {
+    return !!post && !post.deleted && effectiveStatus(post) === 'RECRUITING';
+  }
+
   function findPost(postId) {
     return db.posts.find((p) => p.id === postId && !p.deleted) || null;
   }
 
   function activePostOf(openid) {
-    return db.posts.find((p) => p.ownerOpenid === openid && !p.deleted && effectiveStatus(p) === 'RECRUITING') || null;
+    return db.posts.find((p) => p.ownerOpenid === openid && isActive(p)) || null;
+  }
+
+  function requestOf(postId, openid) {
+    return db.requests.find((r) => r.postId === postId && r.applicantOpenid === openid) || null;
+  }
+
+  function pendingCount(post) {
+    return isActive(post) ? db.requests.filter((r) => r.postId === post.id && r.status === 'PENDING').length : 0;
+  }
+
+  function isRisky(...texts) {
+    return texts.some((t) => String(t || '').indexOf(MOCK_RISKY_WORD) !== -1);
   }
 
   function cardView(post) {
-    const total = TEST_CONFIG.limits.maxPlayers;
     return {
       id: post.id,
+      modeCode: post.modeCode,
       rankCode: post.rankCode,
       serverCode: post.serverCode,
-      modeCode: post.modeCode,
       currentPlayers: post.currentPlayers,
-      maxPlayers: total,
-      remainingSlots: total - post.currentPlayers,
+      maxPlayers: post.maxPlayers,
+      remainingSlots: post.maxPlayers - post.currentPlayers,
       note: post.note,
       status: effectiveStatus(post),
       createdAt: post.createdAt,
@@ -61,7 +78,7 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
     const isOwner = !!openid && post.ownerOpenid === openid;
     const recruiting = effectiveStatus(post) === 'RECRUITING';
     return Object.assign(cardView(post), {
-      isOwner,
+      updatedAt: post.updatedAt,
       canEdit: isOwner && recruiting,
       canClose: isOwner && recruiting,
       canDelete: isOwner,
@@ -69,12 +86,25 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
   }
 
   function ownView(post) {
-    return Object.assign(detailView(post, post.ownerOpenid), { gameId: post.gameId });
+    return Object.assign(detailView(post, post.ownerOpenid), { gameId: post.gameId, pendingRequestCount: pendingCount(post) });
+  }
+
+  function requestView(request) {
+    const post = db.posts.find((p) => p.id === request.postId);
+    return {
+      id: request.id,
+      postId: request.postId,
+      status: request.status === 'PENDING' && !isActive(post) ? 'EXPIRED' : request.status,
+      applicantGameId: request.applicantGameId,
+      message: request.message,
+      createdAt: request.createdAt,
+      decidedAt: request.decidedAt,
+    };
   }
 
   // 按发布时间倒序、ID 倒序排序；游标为最后一条的“时间|ID”
   function paginate(posts, cursor, limit, view) {
-    const size = Math.min(Math.max(Number(limit) || TEST_CONFIG.limits.pageSize, 1), MAX_PAGE_SIZE);
+    const size = Math.min(Math.max(Number(limit) || APP_CONFIG.limits.pageSize, 1), MAX_PAGE_SIZE);
     const sorted = posts.slice().sort(compareDesc);
     let start = 0;
     if (cursor) {
@@ -96,7 +126,7 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
   function checkOwnerWrite(post, openid, version, needRecruiting) {
     if (!post) return fail('NOT_FOUND', '信息不存在或已删除');
     if (post.ownerOpenid !== openid) return fail('FORBIDDEN', '只有发布者可以操作');
-    if (Number(version) !== post.version) return fail('VERSION_CONFLICT', '信息已被更新');
+    if (version !== undefined && Number(version) !== post.version) return fail('VERSION_CONFLICT', '信息已被更新');
     if (needRecruiting && effectiveStatus(post) !== 'RECRUITING') return fail('POST_UNAVAILABLE', '该信息已不在招募中');
     return null;
   }
@@ -113,15 +143,31 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
     return errors[Object.keys(errors)[0]];
   }
 
+  function maxPlayersOf(modeCode) {
+    const mode = APP_CONFIG.modes.find((m) => m.code === modeCode);
+    return (mode && mode.maxPlayers) || APP_CONFIG.limits.maxPlayers;
+  }
+
+  function setCount(post, count) {
+    post.currentPlayers = count;
+    post.status = count >= post.maxPlayers ? 'FULL' : 'RECRUITING';
+    post.updatedAt = new Date(now()).toISOString();
+    post.version += 1;
+  }
+
+  function withAny(code, value) {
+    return value === code || (code !== 'ANY' && value === 'ANY');
+  }
+
   const handlers = {
     getConfig() {
-      return ok(TEST_CONFIG);
+      return ok(APP_CONFIG);
     },
 
     ensureUser(payload, openid) {
       if (!openid) return fail('UNAUTHENTICATED', '请先登录');
       if (!db.users[openid]) {
-        db.users[openid] = { userId: `u-${Object.keys(db.users).length + 1}`, createdAt: new Date(now()).toISOString() };
+        db.users[openid] = { userId: `u-${Object.keys(db.users).length + 1}`, lastGameId: '', createdAt: new Date(now()).toISOString() };
         persist();
       }
       const active = activePostOf(openid);
@@ -129,19 +175,20 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
         userId: db.users[openid].userId,
         hasActivePost: !!active,
         activePostId: active ? active.id : null,
+        pendingRequestCount: active ? pendingCount(active) : 0,
+        lastGameId: db.users[openid].lastGameId || '',
       });
     },
 
     listPosts(payload) {
       const { modeCode, rankCode, serverCode, remainingSlots, cursor, limit } = payload;
-      const total = TEST_CONFIG.limits.maxPlayers;
       const posts = db.posts.filter((p) => {
-        if (p.deleted || effectiveStatus(p) !== 'RECRUITING') return false;
+        if (!isActive(p)) return false;
         if (modeCode && p.modeCode !== modeCode) return false;
-        // 选中某段位时，同时包含招募段位为“不限”的信息
-        if (rankCode && p.rankCode !== rankCode && p.rankCode !== 'ANY') return false;
-        if (serverCode && p.serverCode !== serverCode) return false;
-        if (remainingSlots && total - p.currentPlayers !== Number(remainingSlots)) return false;
+        // 选中具体段位或服务器时，同时包含“不限”
+        if (rankCode && !withAny(rankCode, p.rankCode)) return false;
+        if (serverCode && !withAny(serverCode, p.serverCode)) return false;
+        if (remainingSlots && p.maxPlayers - p.currentPlayers !== Number(remainingSlots)) return false;
         return true;
       });
       return ok(paginate(posts, cursor, limit, cardView));
@@ -150,7 +197,12 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
     getPost(payload, openid) {
       const post = findPost(payload.postId);
       if (!post) return fail('NOT_FOUND', '信息不存在或已删除');
-      return ok(detailView(post, openid));
+      const view = detailView(post, openid);
+      if (openid && post.ownerOpenid !== openid) {
+        const request = requestOf(post.id, openid);
+        view.myRequest = request ? requestView(request) : null;
+      }
+      return ok(view);
     },
 
     getContact(payload, openid) {
@@ -168,29 +220,35 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
 
       // 幂等：同一用户重复提交同一 requestId 返回首次结果
       const key = `${openid}:${requestId}`;
-      const prior = db.requests[key] && findPost(db.requests[key]);
-      if (prior) return ok({ id: prior.id, status: effectiveStatus(prior), version: prior.version }, requestId);
+      if (db.idempotency[key]) {
+        const prior = db.posts.find((p) => p.id === db.idempotency[key]);
+        if (prior.deleted) return fail('NOT_FOUND', '信息不存在或已删除');
+        return ok({ id: prior.id, status: effectiveStatus(prior), version: prior.version }, requestId);
+      }
 
-      const { values, errors } = validatePostForm(pickForm(payload), 'create', TEST_CONFIG);
+      const { values, errors } = validatePostForm(pickForm(payload), 'create', APP_CONFIG);
       if (Object.keys(errors).length) return fail('VALIDATION_ERROR', firstError(errors));
+      if (isRisky(values.gameId, values.note)) return fail('CONTENT_RISKY', '内容包含不合规信息，请修改后重试');
 
       const active = activePostOf(openid);
-      if (active) return fail('ACTIVE_POST_EXISTS', '已有招募中的信息', { data: { existingPostId: active.id } });
+      if (active) return fail('ACTIVE_POST_EXISTS', '已有招募中的信息', { existingPostId: active.id });
 
       const t = now();
       db.seq += 1;
       const post = Object.assign({}, values, {
         id: `post-${t.toString(36)}-${db.seq}`,
         ownerOpenid: openid,
+        maxPlayers: maxPlayersOf(values.modeCode),
         status: 'RECRUITING',
         deleted: false,
         createdAt: new Date(t).toISOString(),
         updatedAt: new Date(t).toISOString(),
-        expiresAt: new Date(t + TEST_CONFIG.limits.expireMinutes * 60000).toISOString(),
+        expiresAt: new Date(t + APP_CONFIG.limits.expireMinutes * 60000).toISOString(),
         version: 1,
       });
       db.posts.push(post);
-      db.requests[key] = post.id;
+      db.idempotency[key] = post.id;
+      if (db.users[openid]) db.users[openid].lastGameId = values.gameId;
       persist();
       return ok({ id: post.id, status: post.status, version: post.version }, requestId);
     },
@@ -201,15 +259,13 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
       const denied = checkOwnerWrite(post, openid, payload.version, true);
       if (denied) return denied;
 
-      const { values, errors } = validatePostForm(pickForm(payload), 'edit', TEST_CONFIG);
+      const { values, errors } = validatePostForm(pickForm(payload), 'edit', APP_CONFIG);
       if (Object.keys(errors).length) return fail('VALIDATION_ERROR', firstError(errors));
+      if (isRisky(values.gameId, values.note)) return fail('CONTENT_RISKY', '内容包含不合规信息，请修改后重试');
 
       // 编辑不延长有效期
-      Object.assign(post, values, {
-        status: values.currentPlayers === TEST_CONFIG.limits.maxPlayers ? 'FULL' : 'RECRUITING',
-        updatedAt: new Date(now()).toISOString(),
-        version: post.version + 1,
-      });
+      Object.assign(post, values, { maxPlayers: maxPlayersOf(values.modeCode) });
+      setCount(post, values.currentPlayers);
       persist();
       return ok(detailView(post, openid));
     },
@@ -243,13 +299,91 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
       const posts = db.posts.filter((p) => p.ownerOpenid === openid && !p.deleted);
       return ok(paginate(posts, payload.cursor, payload.limit, ownView));
     },
+
+    applyToPost(payload, openid) {
+      if (!openid || !db.users[openid]) return fail('UNAUTHENTICATED', '请先登录');
+      const { values, errors } = validateApplyForm(payload, APP_CONFIG);
+      if (Object.keys(errors).length) return fail('VALIDATION_ERROR', firstError(errors));
+      const post = findPost(payload.postId);
+      if (!post) return fail('NOT_FOUND', '信息不存在或已删除');
+      if (post.ownerOpenid === openid) return fail('FORBIDDEN', '不能申请加入自己发布的队伍');
+      if (!isActive(post)) return fail('POST_UNAVAILABLE', '该信息已不在招募中');
+      const prior = requestOf(post.id, openid);
+      if (prior && prior.status !== 'CANCELLED') return ok(requestView(prior));
+      if (isRisky(values.gameId, values.message)) return fail('CONTENT_RISKY', '内容包含不合规信息，请修改后重试');
+
+      const t = new Date(now()).toISOString();
+      const request = prior || { id: `req-${post.id}-${db.users[openid].userId}`, postId: post.id, applicantOpenid: openid };
+      Object.assign(request, { applicantGameId: values.gameId, message: values.message, status: 'PENDING', createdAt: t, decidedAt: null });
+      if (!prior) db.requests.push(request);
+      db.users[openid].lastGameId = values.gameId;
+      persist();
+      return ok(requestView(request));
+    },
+
+    cancelApplication(payload, openid) {
+      if (!openid) return fail('UNAUTHENTICATED', '请先登录');
+      const request = requestOf(payload.postId, openid);
+      if (!request) return fail('NOT_FOUND', '申请不存在');
+      if (request.status !== 'PENDING') return fail('VALIDATION_ERROR', '申请已处理，无法撤回');
+      request.status = 'CANCELLED';
+      persist();
+      return ok(requestView(request));
+    },
+
+    listPostRequests(payload, openid) {
+      if (!openid) return fail('UNAUTHENTICATED', '请先登录');
+      const post = findPost(payload.postId);
+      const denied = checkOwnerWrite(post, openid, undefined, false);
+      if (denied) return denied;
+      const items = db.requests
+        .filter((r) => r.postId === post.id && r.status !== 'CANCELLED')
+        .map(requestView)
+        .sort((a, b) => (b.status === 'PENDING') - (a.status === 'PENDING') || (a.createdAt < b.createdAt ? 1 : -1));
+      return ok({ items });
+    },
+
+    reportPost(payload, openid) {
+      if (!openid || !db.users[openid]) return fail('UNAUTHENTICATED', '请先登录');
+      const post = findPost(payload.postId);
+      if (!post) return fail('NOT_FOUND', '信息不存在或已删除');
+      if (post.ownerOpenid === openid) return fail('FORBIDDEN', '不能举报自己发布的信息');
+      if (!APP_CONFIG.reportReasons.some((r) => r.code === payload.reason)) return fail('VALIDATION_ERROR', '请选择举报原因');
+      db.reports = db.reports || [];
+      const prior = db.reports.find((r) => r.postId === post.id && r.reporterOpenid === openid);
+      if (prior) return ok({ id: prior.id, status: prior.status, duplicate: true });
+      const report = { id: `rp-${post.id}-${db.users[openid].userId}`, postId: post.id, reporterOpenid: openid, reason: payload.reason, status: 'OPEN', createdAt: new Date(now()).toISOString() };
+      db.reports.push(report);
+      persist();
+      return ok({ id: report.id, status: 'OPEN', duplicate: false });
+    },
+
+    decideRequest(payload, openid) {
+      if (!openid) return fail('UNAUTHENTICATED', '请先登录');
+      const request = db.requests.find((r) => r.id === payload.requestId);
+      if (!request) return fail('NOT_FOUND', '申请不存在');
+      const post = findPost(request.postId);
+      const denied = checkOwnerWrite(post, openid, undefined, true);
+      if (denied) return denied;
+      if (request.status !== 'PENDING') return fail('VALIDATION_ERROR', '该申请已处理');
+      if (payload.decision === 'ACCEPT') {
+        if (post.currentPlayers >= post.maxPlayers) return fail('POST_UNAVAILABLE', '队伍已满员');
+        setCount(post, post.currentPlayers + 1);
+      } else if (payload.decision !== 'REJECT') {
+        return fail('VALIDATION_ERROR', '处理方式无效');
+      }
+      request.status = payload.decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';
+      request.decidedAt = new Date(now()).toISOString();
+      persist();
+      return ok({ request: requestView(request), post: detailView(post, openid) });
+    },
   };
 
   return {
     // openid 为 null 表示访客（未登录）
     handle(action, payload, openid) {
       const handler = handlers[action];
-      if (!handler) return fail('INTERNAL_ERROR', `未知接口 ${action}`);
+      if (!handler) return fail('VALIDATION_ERROR', `未知接口 ${action}`);
       return handler(payload || {}, openid || null);
     },
     reset() {
@@ -260,7 +394,12 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
 }
 
 function freshDb(t) {
-  return { seq: 0, users: {}, posts: seedPosts(t), requests: {} };
+  return { seq: 0, users: {}, posts: seedPosts(t), requests: [], idempotency: {} };
+}
+
+// 旧版本地数据缺少新字段时视为无效，重新生成
+function normalize(db) {
+  return db && Array.isArray(db.requests) && db.idempotency ? db : null;
 }
 
 function compareDesc(a, b) {
@@ -269,4 +408,4 @@ function compareDesc(a, b) {
   return a.id < b.id ? 1 : -1;
 }
 
-module.exports = { createMockBackend };
+module.exports = { createMockBackend, MOCK_RISKY_WORD };

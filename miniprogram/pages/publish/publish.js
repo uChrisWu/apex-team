@@ -5,6 +5,7 @@ const changes = require('../../utils/changes');
 const { loadConfig } = require('../../utils/config-store');
 const { STATUS_TEXT } = require('../../utils/post-view');
 const { newRequestId } = require('../../utils/ids');
+const { requestApplyNotice } = require('../../utils/notify');
 const { toAppError, showError } = require('../../utils/errors');
 
 // 编辑时从“我的发布”的本人记录加载 gameId（getPost 不返回游戏 ID）
@@ -30,6 +31,7 @@ Page({
     value: null,
     submitting: false,
     activePostId: null,
+    defaultGameId: '',
     isMock: api.isMock,
   },
 
@@ -70,7 +72,10 @@ Page({
 
   syncActivePost() {
     const user = auth.getUser();
-    this.setData({ activePostId: user && user.hasActivePost ? user.activePostId : null });
+    this.setData({
+      activePostId: user && user.hasActivePost ? user.activePostId : null,
+      defaultGameId: (user && user.lastGameId) || '',
+    });
   },
 
   async loadEdit() {
@@ -103,6 +108,8 @@ Page({
   async onSubmit(e) {
     if (this.data.submitting) return;
     const values = e.detail.values;
+    // 订阅请求必须在点击回调中、任何 await 之前发起；授权结果不影响发布
+    if (this.data.formMode === 'create') requestApplyNotice(this.data.config);
     const user = await auth.requireLogin('发布组队信息需要先登录，已填写的内容会保留');
     if (!user) return;
 

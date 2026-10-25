@@ -30,3 +30,14 @@
 }
 .dev-user--on { background: var(--c-brand-soft); color: var(--c-brand); }
 .dev-btns { margin-top: 12rpx; }
+
+.pending {
+  margin-top: 16rpx;
+  padding: 14rpx 20rpx;
+  border-radius: 10rpx;
+  background: var(--c-warn-soft);
+  color: var(--c-warn);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+.pending-link { float: right; }

@@ -1,6 +1,6 @@
 # apex-team
 
-Apex 组队微信小程序（微信原生小程序前端）。需求见 [apex-team-frontend-requirements.md](apex-team-frontend-requirements.md)（V0.4）。
+Apex 组队微信小程序（微信原生小程序前端）。需求见 [apex-team-frontend-requirements.md](apex-team-frontend-requirements.md) 与 [apex-team-backend-requirements.md](apex-team-backend-requirements.md)（V0.5）。游戏模式、段位、服务器清单见 [Apex_Lists_2026-10-25.md](Apex_Lists_2026-10-25.md)，配置来源为 `miniprogram/services/mock/fixtures.js`。
 
 当前进度：需求文档第 5 节步骤 1–4 已完成（四个页面、复用组件、统一接口层、模拟后端、登录引导、复制联系、编辑/结束/删除、状态与错误提示）。前端已接入开发环境的云函数后端；步骤 5 的真机联调与验收待进行。
 
@@ -71,4 +71,4 @@ npm test
 | ensureUser 返回 | `{ userId, hasActivePost, activePostId }` |
 | 分页游标 | 不透明字符串，前端原样回传 |
 
-游戏模式、段位和服务器的正式选项尚待确认（需求文档第 7 节），模拟模式使用标注“测试”的选项。
+模拟模式下，包含“违规”二字的文字会被当作未通过内容安全检测，便于离线验证提示。

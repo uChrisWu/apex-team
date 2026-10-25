@@ -12,11 +12,11 @@
     你已有一条招募中的信息，发布新信息前需先结束或删除。<text class="link">查看原信息 ›</text>
   </view>
 
-  <post-form config="{{config}}" formMode="{{formMode}}" value="{{value}}" submitting="{{submitting}}"
+  <post-form config="{{config}}" formMode="{{formMode}}" value="{{value}}" defaultGameId="{{defaultGameId}}" submitting="{{submitting}}"
              submitText="{{formMode === 'edit' ? '保存修改' : '发布'}}" bindsubmit="onSubmit" />
 
   <view class="hint foot-note">
-    <block wx:if="{{formMode === 'create'}}">发布后 2 小时自动过期。人数需要你在组到队友后手动更新。</block>
-    <block wx:else>编辑不会延长有效期；人数改为 3/3 后将显示“已满员”并从大厅移除。</block>
+    <block wx:if="{{formMode === 'create'}}">发布后 2 小时自动过期。有人申请时会提醒你（请允许订阅消息）；同意申请后人数自动 +1，其他方式组到的队友请手动更新人数。</block>
+    <block wx:else>编辑不会延长有效期；人数达到上限后将显示“已满员”并从大厅移除。</block>
   </view>
 </view>

@@ -51,4 +51,13 @@ module.exports = {
   deletePost: (postId, version) => call('deletePost', { postId, version }),
 
   listMyPosts: (query) => call('listMyPosts', query),
+
+  // 申请加入：申请人提交自己的游戏 ID 与可选留言；房主查看并同意（人数 +1）或拒绝
+  applyToPost: (postId, form) => call('applyToPost', Object.assign({ postId }, form)),
+  cancelApplication: (postId) => call('cancelApplication', { postId }),
+  listPostRequests: (postId) => call('listPostRequests', { postId }),
+  decideRequest: (requestId, decision) => call('decideRequest', { requestId, decision }),
+
+  // 举报：reason 为配置中的举报原因代码
+  reportPost: (postId, reason) => call('reportPost', { postId, reason }),
 };

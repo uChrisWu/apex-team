@@ -27,7 +27,7 @@ function setup() {
 
 const FORM = {
   rankCode: 'GOLD',
-  serverCode: 'TEST_TOKYO',
+  serverCode: 'TOKYO',
   currentPlayers: 1,
   modeCode: 'RANKED',
   gameId: '  PlayerA  ',
@@ -55,7 +55,7 @@ test('第 6 节最小端到端流程', () => {
   assert.equal(created.status, 'RECRUITING');
 
   // B 筛选可见
-  const found = allIds(okData, { rankCode: 'GOLD', serverCode: 'TEST_TOKYO' });
+  const found = allIds(okData, { rankCode: 'GOLD', serverCode: 'TOKYO' });
   assert.ok(found.includes(created.id));
 
   // 访客详情不返回游戏 ID，也无管理权限
@@ -200,4 +200,31 @@ test('分页无重复，选中段位时包含“不限”', () => {
   assert.equal(first.items.length, 20);
   const times = first.items.map((p) => p.createdAt);
   assert.deepEqual(times, times.slice().sort().reverse());
+});
+
+test('模拟后端：双人模式上限、服务器“不限”、违规内容', () => {
+  const { call, okData } = setup();
+  okData('ensureUser', {}, A);
+  const duo = Object.assign({ requestId: 'd' }, FORM, { modeCode: 'DUOS', serverCode: 'ANY' });
+  assert.equal(call('createPost', Object.assign({}, duo, { currentPlayers: 2 }), A).code, 'VALIDATION_ERROR');
+  const post = okData('createPost', duo, A);
+  assert.equal(okData('getPost', { postId: post.id }, A).maxPlayers, 2);
+  assert.ok(okData('listPosts', { serverCode: 'TOKYO', limit: 50 }, null).items.some((p) => p.id === post.id));
+  assert.equal(call('createPost', Object.assign({ requestId: 'r' }, FORM, { note: '违规' }), B).code, 'CONTENT_RISKY');
+});
+
+test('模拟后端：申请加入、同意 +1、满员后申请失效', () => {
+  const { okData, call } = setup();
+  for (const o of [A, B, 'user-c']) okData('ensureUser', {}, o);
+  const post = okData('createPost', Object.assign({ requestId: 'p' }, FORM, { currentPlayers: 2 }), A);
+  const rb = okData('applyToPost', { postId: post.id, gameId: 'B' }, B);
+  okData('applyToPost', { postId: post.id, gameId: 'C' }, 'user-c');
+  assert.equal(okData('ensureUser', {}, A).pendingRequestCount, 2);
+  assert.equal(okData('listMyPosts', {}, A).items[0].pendingRequestCount, 2);
+  assert.equal(call('applyToPost', { postId: post.id, gameId: 'A' }, A).code, 'FORBIDDEN');
+
+  const res = okData('decideRequest', { requestId: rb.id, decision: 'ACCEPT' }, A);
+  assert.equal(res.post.status, 'FULL');
+  assert.equal(okData('getPost', { postId: post.id }, 'user-c').myRequest.status, 'EXPIRED');
+  assert.equal(okData('ensureUser', {}, A).pendingRequestCount, 0);
 });

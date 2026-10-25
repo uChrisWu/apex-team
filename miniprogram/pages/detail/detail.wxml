@@ -31,12 +31,75 @@
 
   <view wx:if="{{post.status !== 'RECRUITING'}}" class="card notice notice--off">{{post.statusNote}}</view>
 
-  <view class="card">
-    <view class="notice-text">请在游戏内联系，人数由发布者手动更新。</view>
-    <view class="hint">复制游戏 ID 不会占用名额，也不代表加入成功。</view>
-    <view class="btn btn--primary contact {{post.status !== 'RECRUITING' || copying ? 'btn--disabled' : ''}}"
+  <!-- 非发布者：申请加入与复制联系 -->
+  <view wx:if="{{!post.canDelete}}" class="card">
+    <view class="notice-text">申请加入后房主会收到提醒，同意后人数自动更新；也可以直接复制游戏 ID 在游戏内联系。</view>
+
+    <view wx:if="{{myRequest && myRequest.status !== 'CANCELLED'}}" class="my-request my-request--{{myRequest.status}}">
+      <view class="my-request-head">
+        <text>我的申请：{{myRequest.statusText}}</text>
+        <text class="muted">{{myRequest.timeText}}</text>
+      </view>
+      <view wx:if="{{myRequest.status === 'ACCEPTED'}}" class="hint">房主已同意，请留意游戏内的组队邀请。</view>
+      <view wx:if="{{myRequest.status === 'PENDING'}}" class="link-btn" bindtap="onCancelApply">撤回申请</view>
+    </view>
+
+    <view wx:elif="{{applyOpen}}" class="apply-form">
+      <view class="apply-label">你的游戏 ID<text class="req">*</text></view>
+      <input class="input" value="{{applyForm.gameId}}" maxlength="{{limits.gameIdMaxLength}}"
+             placeholder="房主将用它在游戏内邀请你" data-field="gameId" bindinput="onApplyInput" />
+      <view wx:if="{{applyErrors.gameId}}" class="error">{{applyErrors.gameId}}</view>
+      <view class="apply-label">留言<text class="muted">（选填）</text></view>
+      <input class="input" value="{{applyForm.message}}" maxlength="{{limits.applyMessageMaxLength}}"
+             placeholder="例如：常玩恶灵，可以开麦" data-field="message" bindinput="onApplyInput" />
+      <view wx:if="{{applyErrors.message}}" class="error">{{applyErrors.message}}</view>
+      <view class="btn-row apply-actions">
+        <view class="btn" hover-class="btn-hover" bindtap="onCloseApply">取消</view>
+        <view class="btn btn--primary {{applying ? 'btn--disabled' : ''}}" hover-class="btn-hover" bindtap="onSubmitApply">
+          {{applying ? '发送中…' : '发送申请'}}
+        </view>
+      </view>
+    </view>
+
+    <view wx:elif="{{post.status === 'RECRUITING'}}" class="btn btn--primary contact" hover-class="btn-hover" bindtap="onOpenApply">
+      {{myRequest && myRequest.status === 'CANCELLED' ? '重新申请加入' : '申请加入'}}
+    </view>
+
+    <view class="btn contact {{post.status !== 'RECRUITING' || copying ? 'btn--disabled' : ''}}"
           hover-class="{{post.status === 'RECRUITING' ? 'btn-hover' : 'none'}}" bindtap="onCopyContact">
       {{post.status !== 'RECRUITING' ? '当前不可联系' : copying ? '正在确认…' : '复制游戏 ID'}}
+    </view>
+    <view class="hint copy-hint">复制游戏 ID 不会占用名额，也不代表加入成功。</view>
+    <view class="report" bindtap="onReport">举报这条信息</view>
+  </view>
+
+  <!-- 发布者：入队申请 -->
+  <view wx:if="{{post.canDelete}}" class="card">
+    <view class="requests-head">
+      <view class="section-title manage-title">入队申请</view>
+      <view wx:if="{{canSubscribe && post.status === 'RECRUITING'}}" class="link-btn" bindtap="onSubscribe">开启申请提醒</view>
+    </view>
+    <view wx:if="{{requestsStatus === 'loading'}}" class="hint">加载中…</view>
+    <view wx:elif="{{requestsStatus === 'error'}}" class="hint">申请加载失败，<text class="link-btn" bindtap="loadRequests">重试</text></view>
+    <view wx:elif="{{!requests.length}}" class="hint">暂无申请。有人申请时，“我的发布”标签会显示提醒。</view>
+    <view wx:for="{{requests}}" wx:key="id" class="request">
+      <view class="request-main">
+        <view class="request-id">{{item.applicantGameId}}</view>
+        <view class="request-meta">
+          <text class="tag tag--req-{{item.status}}">{{item.statusText}}</text>
+          <text class="muted">{{item.timeText}}</text>
+        </view>
+        <view wx:if="{{item.message}}" class="request-msg">{{item.message}}</view>
+      </view>
+      <view class="request-actions">
+        <view class="btn btn--small" hover-class="btn-hover" data-gameid="{{item.applicantGameId}}" bindtap="onCopyApplicant">复制 ID</view>
+        <block wx:if="{{item.status === 'PENDING'}}">
+          <view class="btn btn--small btn--primary {{decidingId === item.id ? 'btn--disabled' : ''}}" hover-class="btn-hover"
+                data-id="{{item.id}}" data-decision="ACCEPT" bindtap="onDecide">同意</view>
+          <view class="btn btn--small {{decidingId === item.id ? 'btn--disabled' : ''}}" hover-class="btn-hover"
+                data-id="{{item.id}}" data-decision="REJECT" bindtap="onDecide">拒绝</view>
+        </block>
+      </view>
     </view>
   </view>
 

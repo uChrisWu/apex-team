@@ -1,11 +1,15 @@
-// 业务层：输入校验、业务规则与响应格式。数据读写通过注入的 store 完成，
-// 因此可以在 Node 中用内存 store 测试，部署时使用 store.js（云开发文档型数据库）。
+// 业务层：输入校验、业务规则与响应格式。数据读写通过注入的 store 完成，微信开放能力（内容安全、
+// 订阅消息）通过注入的 wechat 完成，因此可以在 Node 中测试；部署时分别使用 store.js 与 wechat.js。
 const crypto = require('node:crypto');
 
-const ACTIONS = new Set(['getConfig', 'ensureUser', 'listPosts', 'getPost', 'getContact', 'createPost', 'updatePost', 'closePost', 'deletePost', 'listMyPosts']);
+const ACTIONS = new Set([
+  'getConfig', 'ensureUser', 'listPosts', 'getPost', 'getContact', 'createPost', 'updatePost', 'closePost', 'deletePost', 'listMyPosts',
+  'applyToPost', 'cancelApplication', 'listPostRequests', 'decideRequest', 'reportPost',
+]);
 const FORM_FIELDS = ['modeCode', 'rankCode', 'serverCode', 'currentPlayers', 'gameId', 'note'];
 const MAX_PAGE_SIZE = 50;
 const POST_ID = /^p_[0-9a-f]{64}$/;
+const REQUEST_ID = /^r_[0-9a-f]{64}$/;
 
 class BusinessError extends Error {
   constructor(code, message, data) {
@@ -32,12 +36,18 @@ function codePoints(str) {
   return Array.from(str).length;
 }
 
-function hasCode(options, code) {
-  return typeof code === 'string' && (options || []).some((item) => item.code === code);
+function findOption(options, code) {
+  return typeof code === 'string' ? (options || []).find((item) => item.code === code) || null : null;
+}
+
+// 发布与编辑只接受启用中的选项；停用的选项仍可用于显示历史记录
+function enabledOption(options, code) {
+  const option = findOption(options, code);
+  return option && option.enabled !== false ? option : null;
 }
 
 function toIso(value) {
-  return new Date(value).toISOString();
+  return value ? new Date(value).toISOString() : null;
 }
 
 function sha256(text) {
@@ -71,30 +81,34 @@ function writeCursor(post, identity) {
 
 // ---------- 表单校验（BE-07） ----------
 
+function validateText(value, { required, max, label }) {
+  if (value === undefined && !required) return '';
+  if (typeof value !== 'string') invalid(required ? `请填写${label}` : `${label}格式无效`);
+  const text = value.trim();
+  if (required && !text) invalid(`请填写${label}`);
+  if (codePoints(text) > max) invalid(`${label}最多 ${max} 个字符`);
+  return text;
+}
+
 function validateForm(payload, isCreate, config) {
-  const counts = isCreate ? [1, 2] : [1, 2, 3];
-  if (!hasCode(config.modes, payload.modeCode)) invalid('游戏模式无效');
-  if (!hasCode(config.ranks, payload.rankCode)) invalid('目标段位无效');
-  if (!hasCode(config.servers, payload.serverCode)) invalid('服务器无效');
-  if (!Number.isInteger(payload.currentPlayers) || !counts.includes(payload.currentPlayers)) {
-    invalid(isCreate ? '发布时当前人数只能是 1 或 2' : '当前人数只能是 1、2 或 3');
+  const mode = enabledOption(config.modes, payload.modeCode);
+  if (!mode) invalid('游戏模式无效');
+  if (!enabledOption(config.ranks, payload.rankCode)) invalid('目标段位无效');
+  if (!enabledOption(config.servers, payload.serverCode)) invalid('服务器无效');
+  // 队伍上限按模式确定：新建时不能已满，编辑时允许满员
+  const maxPlayers = mode.maxPlayers || config.limits.maxPlayers;
+  const top = isCreate ? maxPlayers - 1 : maxPlayers;
+  if (!Number.isInteger(payload.currentPlayers) || payload.currentPlayers < 1 || payload.currentPlayers > top) {
+    invalid(`当前人数只能是 1 至 ${top}`);
   }
-  if (typeof payload.gameId !== 'string') invalid('请填写游戏 ID');
-  if (payload.note !== undefined && typeof payload.note !== 'string') invalid('备注格式无效');
-
-  const gameId = payload.gameId.trim();
-  const note = (payload.note || '').trim();
-  if (!gameId) invalid('请填写游戏 ID');
-  if (codePoints(gameId) > config.limits.gameIdMaxLength) invalid(`游戏 ID 最多 ${config.limits.gameIdMaxLength} 个字符`);
-  if (codePoints(note) > config.limits.noteMaxLength) invalid(`备注最多 ${config.limits.noteMaxLength} 个字符`);
-
   return {
     modeCode: payload.modeCode,
     rankCode: payload.rankCode,
     serverCode: payload.serverCode,
     currentPlayers: payload.currentPlayers,
-    gameId,
-    note,
+    maxPlayers,
+    gameId: validateText(payload.gameId, { required: true, max: config.limits.gameIdMaxLength, label: '游戏 ID' }),
+    note: validateText(payload.note, { required: false, max: config.limits.noteMaxLength, label: '备注' }),
   };
 }
 
@@ -108,6 +122,12 @@ function effectiveStatus(post, now) {
 
 function isActive(post, now) {
   return !!post && !post.deletedAt && effectiveStatus(post, now) === 'RECRUITING';
+}
+
+// 待处理申请在队伍不再招募后视为已失效
+function requestStatus(request, post, now) {
+  if (request.status === 'PENDING' && !isActive(post, now)) return 'EXPIRED';
+  return request.status;
 }
 
 function cardView(post, now) {
@@ -138,13 +158,48 @@ function detailView(post, user, now) {
   });
 }
 
-function ownView(post, now) {
-  return Object.assign(detailView(post, { userId: post.ownerId }, now), { gameId: post.gameId });
+function ownView(post, now, pendingRequestCount) {
+  return Object.assign(detailView(post, { userId: post.ownerId }, now), { gameId: post.gameId, pendingRequestCount });
+}
+
+function requestView(request, post, now) {
+  return {
+    id: request.id,
+    postId: request.postId,
+    status: requestStatus(request, post, now),
+    applicantGameId: request.applicantGameId,
+    message: request.message,
+    createdAt: toIso(request.createdAt),
+    decidedAt: toIso(request.decidedAt),
+  };
+}
+
+function postPatchForCount(post, currentPlayers, at) {
+  return {
+    currentPlayers,
+    remainingSlots: post.maxPlayers - currentPlayers,
+    status: currentPlayers >= post.maxPlayers ? 'FULL' : 'RECRUITING',
+    updatedAt: at,
+    version: post.version + 1,
+  };
+}
+
+// 订阅消息字段值：thing 类最多 20 个字符，时间按北京时间显示
+function noticeValue(kind, text) {
+  if (kind.startsWith('time') || kind.startsWith('date')) return text;
+  const chars = Array.from(String(text || '-'));
+  return chars.length > 20 ? chars.slice(0, 19).join('') + '…' : chars.join('');
+}
+
+function beijingTime(date) {
+  const d = new Date(date.getTime() + 8 * 3600000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
 // ---------- 服务 ----------
 
-function createService({ store, now = () => new Date(), clock = () => Date.now(), log = console, configTtlMs = 60000 }) {
+function createService({ store, wechat, now = () => new Date(), clock = () => Date.now(), log = console, configTtlMs = 60000 }) {
   let configCache = null;
   let configLoadedAt = 0;
 
@@ -184,11 +239,19 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
     if (typeof payload.postId !== 'string' || !POST_ID.test(payload.postId)) fail('NOT_FOUND', '信息不存在或已删除');
   }
 
-  // 所有者写操作的公共检查；返回可写的记录
+  // 用户填写的文字先经过微信内容安全检测；检测服务异常时拒绝写入（BE-09）
+  async function checkContent(openid, texts) {
+    const content = texts.filter(Boolean).join('\n');
+    if (!content) return;
+    const suggest = await wechat.checkText(openid, content);
+    if (suggest === 'risky') fail('CONTENT_RISKY', '内容包含不合规信息，请修改后重试');
+  }
+
+  // 所有者写操作的公共检查
   function checkOwnerWrite(post, user, version, needActive, at) {
     if (!post || post.deletedAt) fail('NOT_FOUND', '信息不存在或已删除');
     if (post.ownerId !== user.userId) fail('FORBIDDEN', '只有发布者可以操作');
-    if (post.version !== version) fail('VERSION_CONFLICT', '信息已被更新');
+    if (version !== undefined && post.version !== version) fail('VERSION_CONFLICT', '信息已被更新');
     if (needActive && effectiveStatus(post, at) !== 'RECRUITING') fail('POST_UNAVAILABLE', '该信息已不在招募中');
   }
 
@@ -197,10 +260,56 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
     if (user.activePostId === post.id) await tx.updateUser(user.openid, { activePostId: null });
   }
 
+  async function pendingCountFor(post, at) {
+    return isActive(post, at) ? store.countPendingRequests(post.id) : 0;
+  }
+
+  // 给房主发送订阅消息；失败（未订阅、额度用完等）只记录，不影响申请结果
+  async function notifyOwner(post, request, at) {
+    try {
+      const config = await loadConfig();
+      const notify = config.notify || {};
+      if (!notify.templateId || !notify.fields) return;
+      const ownerOpenid = await store.getOpenidByUserId(post.ownerId);
+      if (!ownerOpenid) return;
+      const modeName = (findOption(config.modes, post.modeCode) || {}).name || post.modeCode;
+      const serverName = (findOption(config.servers, post.serverCode) || {}).name || post.serverCode;
+      const values = {
+        applicant: request.applicantGameId,
+        post: `${modeName} · ${serverName} ${post.currentPlayers}/${post.maxPlayers}`,
+        message: request.message || '无留言',
+        // 适合只有“申请内容”一个文字字段的模板：队伍概要加留言
+        content: request.message ? `申请加入${modeName}：${request.message}` : `申请加入${modeName} · ${serverName}`,
+        time: beijingTime(at),
+      };
+      const data = {};
+      Object.keys(notify.fields).forEach((name) => {
+        const key = notify.fields[name];
+        if (key && values[name] !== undefined) data[key] = { value: noticeValue(key, values[name]) };
+      });
+      await wechat.sendSubscribeMessage({
+        touser: ownerOpenid,
+        templateId: notify.templateId,
+        page: `pages/detail/detail?id=${post.id}`,
+        data,
+        miniprogramState: notify.miniprogramState || 'formal',
+      });
+    } catch (error) {
+      log.info(JSON.stringify({ event: 'notifyOwner', result: 'FAILED', errorCode: (error && (error.errCode || error.code)) || null }));
+    }
+  }
+
   const handlers = {
     async getConfig() {
       const config = await loadConfig();
-      return { modes: config.modes, ranks: config.ranks, servers: config.servers, limits: config.limits };
+      return {
+        modes: config.modes,
+        ranks: config.ranks,
+        servers: config.servers,
+        reportReasons: config.reportReasons || [],
+        limits: config.limits,
+        notify: { templateId: (config.notify && config.notify.templateId) || '' },
+      };
     },
 
     async ensureUser(payload, openid, at) {
@@ -209,27 +318,34 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
         openid,
         userId: crypto.randomUUID(),
         activePostId: null,
+        lastGameId: '',
         createdAt: at,
       });
       const active = user.activePostId ? await store.getPost(user.activePostId) : null;
       const activeId = isActive(active, at) ? active.id : null;
-      return { userId: user.userId, hasActivePost: !!activeId, activePostId: activeId };
+      return {
+        userId: user.userId,
+        hasActivePost: !!activeId,
+        activePostId: activeId,
+        pendingRequestCount: activeId ? await store.countPendingRequests(activeId) : 0,
+        lastGameId: user.lastGameId || '',
+      };
     },
 
     async listPosts(payload, openid, at) {
       if (!hasOnly(payload, ['modeCode', 'rankCode', 'serverCode', 'remainingSlots', 'cursor', 'limit'])) invalid('筛选条件无效');
       const config = await loadConfig();
       for (const [field, options] of [['modeCode', config.modes], ['rankCode', config.ranks], ['serverCode', config.servers]]) {
-        if (payload[field] !== undefined && !hasCode(options, payload[field])) invalid('筛选条件无效');
+        if (payload[field] !== undefined && !findOption(options, payload[field])) invalid('筛选条件无效');
       }
       if (payload.remainingSlots !== undefined && ![1, 2].includes(payload.remainingSlots)) invalid('缺少人数无效');
       const filters = {
         modeCode: payload.modeCode,
         rankCode: payload.rankCode,
         serverCode: payload.serverCode,
-        currentPlayers: payload.remainingSlots ? config.limits.maxPlayers - payload.remainingSlots : undefined,
+        remainingSlots: payload.remainingSlots,
       };
-      const identity = cursorIdentity(['hall', filters.modeCode || '', filters.rankCode || '', filters.serverCode || '', payload.remainingSlots || 0]);
+      const identity = cursorIdentity(['hall', filters.modeCode || '', filters.rankCode || '', filters.serverCode || '', filters.remainingSlots || 0]);
       return page({ publicAt: at, filters }, payload, identity, config, (p) => cardView(p, at));
     },
 
@@ -237,7 +353,11 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
       if (!hasOnly(payload, ['cursor', 'limit'])) invalid('筛选条件无效');
       const user = await requireUser(openid, store);
       const config = await loadConfig();
-      return page({ ownerId: user.userId }, payload, cursorIdentity(['mine', user.userId]), config, (p) => ownView(p, at));
+      const result = await page({ ownerId: user.userId }, payload, cursorIdentity(['mine', user.userId]), config, (p) => p);
+      // 每人最多一条有效招募，只有它可能有待处理申请
+      const items = [];
+      for (const post of result.items) items.push(ownView(post, at, await pendingCountFor(post, at)));
+      return Object.assign(result, { items });
     },
 
     async getPost(payload, openid, at) {
@@ -246,7 +366,13 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
       const post = await store.getPost(payload.postId);
       if (!post || post.deletedAt) fail('NOT_FOUND', '信息不存在或已删除');
       const user = openid ? await store.getUser(openid) : null;
-      return detailView(post, user, at);
+      const view = detailView(post, user, at);
+      // 非发布者可看到自己对这条信息的申请状态
+      if (user && user.userId !== post.ownerId) {
+        const request = await store.getRequest(requestIdFor(post.id, user.userId));
+        view.myRequest = request ? requestView(request, post, at) : null;
+      }
+      return view;
     },
 
     async getContact(payload, openid, at) {
@@ -264,6 +390,8 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
       if (typeof payload.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(payload.requestId)) invalid('请求标识无效');
       const config = await loadConfig();
       const form = validateForm(payload, true, config);
+      await requireUser(openid, store);
+      await checkContent(openid, [form.gameId, form.note]);
 
       return inTransaction(async (tx) => {
         const user = await requireUser(openid, tx);
@@ -278,7 +406,8 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
           const active = await tx.getPost(user.activePostId);
           if (isActive(active, at)) fail('ACTIVE_POST_EXISTS', '已有招募中的信息', { existingPostId: active.id });
         }
-        const post = Object.assign({ id, ownerId: user.userId, maxPlayers: config.limits.maxPlayers }, form, {
+        const post = Object.assign({ id, ownerId: user.userId }, form, {
+          remainingSlots: form.maxPlayers - form.currentPlayers,
           status: 'RECRUITING',
           createdAt: at,
           updatedAt: at,
@@ -288,7 +417,7 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
           createRequestId: payload.requestId,
         });
         await tx.createPost(post);
-        await tx.updateUser(user.openid, { activePostId: id });
+        await tx.updateUser(user.openid, { activePostId: id, lastGameId: form.gameId });
         return { id, status: 'RECRUITING', version: 1 };
       });
     },
@@ -297,17 +426,15 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
       checkWritePayload(payload, [...FORM_FIELDS, 'postId', 'version']);
       const config = await loadConfig();
       const form = validateForm(payload, false, config);
+      await requireUser(openid, store);
+      await checkContent(openid, [form.gameId, form.note]);
 
       return inTransaction(async (tx) => {
         const user = await requireUser(openid, tx);
         const post = await tx.getPost(payload.postId);
         checkOwnerWrite(post, user, payload.version, true, at);
         // 编辑不改变 createdAt、expiresAt
-        const patch = Object.assign({}, form, {
-          status: form.currentPlayers === post.maxPlayers ? 'FULL' : 'RECRUITING',
-          updatedAt: at,
-          version: post.version + 1,
-        });
+        const patch = Object.assign({}, form, postPatchForCount(Object.assign({}, post, form), form.currentPlayers, at));
         await tx.updatePost(post.id, patch);
         const updated = Object.assign({}, post, patch);
         if (updated.status !== 'RECRUITING') await releaseActive(tx, user, updated);
@@ -339,7 +466,148 @@ function createService({ store, now = () => new Date(), clock = () => Date.now()
         return { id: post.id };
       });
     },
+
+    // ---------- 申请加入（BE-08） ----------
+
+    async applyToPost(payload, openid, at) {
+      if (!hasOnly(payload, ['postId', 'gameId', 'message'])) invalid('请求内容无效');
+      requirePostId(payload);
+      const config = await loadConfig();
+      const gameId = validateText(payload.gameId, { required: true, max: config.limits.gameIdMaxLength, label: '游戏 ID' });
+      const message = validateText(payload.message, { required: false, max: config.limits.applyMessageMaxLength, label: '留言' });
+      const applicant = await requireUser(openid, store);
+      const existing = await store.getRequest(requestIdFor(payload.postId, applicant.userId));
+      if (!existing || existing.status === 'CANCELLED') await checkContent(openid, [gameId, message]);
+
+      const result = await inTransaction(async (tx) => {
+        const user = await requireUser(openid, tx);
+        const post = await tx.getPost(payload.postId);
+        if (!post || post.deletedAt) fail('NOT_FOUND', '信息不存在或已删除');
+        if (post.ownerId === user.userId) fail('FORBIDDEN', '不能申请加入自己发布的队伍');
+        if (!isActive(post, at)) fail('POST_UNAVAILABLE', '该信息已不在招募中');
+        const id = requestIdFor(post.id, user.userId);
+        const prior = await tx.getRequest(id);
+        // 每人对每条信息只有一条申请；撤回后可以重新申请，已处理的申请不能重复提交
+        if (prior && prior.status !== 'CANCELLED') return { request: prior, post, created: false };
+        const request = {
+          id,
+          postId: post.id,
+          postOwnerId: post.ownerId,
+          applicantId: user.userId,
+          applicantGameId: gameId,
+          message,
+          status: 'PENDING',
+          createdAt: at,
+          updatedAt: at,
+          decidedAt: null,
+        };
+        if (prior) await tx.updateRequest(id, request);
+        else await tx.createRequest(request);
+        await tx.updateUser(user.openid, { lastGameId: gameId });
+        return { request, post, created: true };
+      });
+
+      if (result.created) await notifyOwner(result.post, result.request, at);
+      return requestView(result.request, result.post, at);
+    },
+
+    async cancelApplication(payload, openid, at) {
+      if (!hasOnly(payload, ['postId'])) invalid('请求内容无效');
+      requirePostId(payload);
+      return inTransaction(async (tx) => {
+        const user = await requireUser(openid, tx);
+        const id = requestIdFor(payload.postId, user.userId);
+        const request = await tx.getRequest(id);
+        if (!request) fail('NOT_FOUND', '申请不存在');
+        if (request.status !== 'PENDING') invalid('申请已处理，无法撤回');
+        const patch = { status: 'CANCELLED', updatedAt: at };
+        await tx.updateRequest(id, patch);
+        return requestView(Object.assign({}, request, patch), await tx.getPost(payload.postId), at);
+      });
+    },
+
+    async listPostRequests(payload, openid, at) {
+      if (!hasOnly(payload, ['postId'])) invalid('请求内容无效');
+      requirePostId(payload);
+      const user = await requireUser(openid, store);
+      const post = await store.getPost(payload.postId);
+      checkOwnerWrite(post, user, undefined, false, at);
+      const requests = await store.listRequests(post.id);
+      // 待处理的排在前面，其余按申请时间倒序
+      const items = requests
+        .map((r) => requestView(r, post, at))
+        .filter((r) => r.status !== 'CANCELLED')
+        .sort((a, b) => (b.status === 'PENDING') - (a.status === 'PENDING') || (a.createdAt < b.createdAt ? 1 : -1));
+      return { items };
+    },
+
+    async decideRequest(payload, openid, at) {
+      if (!hasOnly(payload, ['requestId', 'decision'])) invalid('请求内容无效');
+      if (typeof payload.requestId !== 'string' || !REQUEST_ID.test(payload.requestId)) fail('NOT_FOUND', '申请不存在');
+      if (!['ACCEPT', 'REJECT'].includes(payload.decision)) invalid('处理方式无效');
+      return inTransaction(async (tx) => {
+        const user = await requireUser(openid, tx);
+        const request = await tx.getRequest(payload.requestId);
+        if (!request) fail('NOT_FOUND', '申请不存在');
+        const post = await tx.getPost(request.postId);
+        checkOwnerWrite(post, user, undefined, true, at);
+        if (request.status !== 'PENDING') invalid('该申请已处理');
+
+        let updatedPost = post;
+        if (payload.decision === 'ACCEPT') {
+          // 同意即人数 +1；凑满后自动满员并释放有效招募引用，其余待处理申请随之失效
+          if (post.currentPlayers >= post.maxPlayers) fail('POST_UNAVAILABLE', '队伍已满员');
+          const patch = postPatchForCount(post, post.currentPlayers + 1, at);
+          await tx.updatePost(post.id, patch);
+          updatedPost = Object.assign({}, post, patch);
+          if (updatedPost.status !== 'RECRUITING') await releaseActive(tx, user, updatedPost);
+        }
+        const requestPatch = { status: payload.decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED', decidedAt: at, updatedAt: at };
+        await tx.updateRequest(request.id, requestPatch);
+        return {
+          request: requestView(Object.assign({}, request, requestPatch), updatedPost, at),
+          post: detailView(updatedPost, user, at),
+        };
+      });
+    },
+
+    // ---------- 举报（BE-10） ----------
+
+    // 举报只保存给管理员处理，不对外展示；同一用户对同一信息只记录一次
+    async reportPost(payload, openid, at) {
+      if (!hasOnly(payload, ['postId', 'reason', 'detail'])) invalid('请求内容无效');
+      requirePostId(payload);
+      const config = await loadConfig();
+      if (!enabledOption(config.reportReasons, payload.reason)) invalid('请选择举报原因');
+      const detail = validateText(payload.detail, { required: false, max: config.limits.reportDetailMaxLength || 100, label: '举报说明' });
+      return inTransaction(async (tx) => {
+        const user = await requireUser(openid, tx);
+        const post = await tx.getPost(payload.postId);
+        if (!post || post.deletedAt) fail('NOT_FOUND', '信息不存在或已删除');
+        if (post.ownerId === user.userId) fail('FORBIDDEN', '不能举报自己发布的信息');
+        const id = 'rp_' + sha256(`${post.id}:${user.userId}`);
+        const prior = await tx.getReport(id);
+        if (prior) return { id, status: prior.status, duplicate: true };
+        await tx.createReport({
+          id,
+          postId: post.id,
+          postOwnerId: post.ownerId,
+          reporterId: user.userId,
+          reason: payload.reason,
+          detail,
+          // 保存举报时的内容快照，便于信息被修改或删除后核查
+          snapshot: { gameId: post.gameId, note: post.note, modeCode: post.modeCode, serverCode: post.serverCode },
+          status: 'OPEN',
+          createdAt: at,
+        });
+        return { id, status: 'OPEN', duplicate: false };
+      });
+    },
   };
+
+  function requestIdFor(postId, userId) {
+    return 'r_' + sha256(`${postId}:${userId}`);
+  }
 
   function checkWritePayload(payload, fields) {
     if (!hasOnly(payload, fields)) invalid('提交内容无效');

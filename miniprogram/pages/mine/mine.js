@@ -52,9 +52,10 @@ Page({
       this.setData({ loginStatus: 'guest', list: [] });
       return;
     }
-    const stale = changes.current() !== this.seenRevision || auth.revision() !== this.seenAuthRevision;
     this.setData({ loginStatus: 'user' });
-    if (stale) this.reload({ keepList: auth.revision() === this.seenAuthRevision });
+    auth.refresh();
+    // 待处理申请随时可能变化，每次显示都刷新；登录身份变化时清空旧列表
+    this.reload({ keepList: auth.revision() === this.seenAuthRevision });
   },
 
   async onLogin() {
@@ -133,6 +134,10 @@ Page({
 
   onSelectPost(e) {
     wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(e.detail.id)}` });
+  },
+
+  onViewRequests(e) {
+    wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(e.currentTarget.dataset.id)}` });
   },
 
   onEdit(e) {

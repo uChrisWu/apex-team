@@ -7,6 +7,7 @@ const MESSAGES = {
   NOT_FOUND: '信息不存在或已删除',
   POST_UNAVAILABLE: '该招募已满员、关闭或过期',
   VERSION_CONFLICT: '信息已被更新，请重新加载后再操作',
+  CONTENT_RISKY: '内容包含不合规信息，请修改后重试',
   INTERNAL_ERROR: '服务暂时不可用，请稍后重试',
   // 前端自有错误码：请求未得到后端响应
   NETWORK_ERROR: '网络异常，请检查网络后重试',

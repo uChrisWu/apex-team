@@ -61,13 +61,16 @@ test('大厅查询：筛选条件、ANY 段位、游标与排序', async () => {
   const store = createStore(db);
   const at = new Date('2026-10-25T00:00:00Z');
   const after = { createdAt: new Date('2026-10-24T23:00:00Z'), id: 'p_9' };
-  const rows = await store.listPosts({ publicAt: at, filters: { modeCode: 'RANKED', rankCode: 'GOLD', currentPlayers: 2 }, after, limit: 21 });
+  const rows = await store.listPosts({ publicAt: at, filters: { modeCode: 'RANKED', rankCode: 'GOLD', serverCode: 'TOKYO', remainingSlots: 1 }, after, limit: 21 });
   assert.deepEqual(rows, [{ id: 'p_1', ownerId: 'u1', createdAt: new Date(0) }]);
   const [, q] = db.calls[0];
   assert.equal(q.name, 'team_posts');
   assert.deepEqual(q.cond, {
     $and: [
-      { deletedAt: null, status: 'RECRUITING', expiresAt: { $gt: at }, modeCode: 'RANKED', rankCode: { $in: ['GOLD', 'ANY'] }, currentPlayers: 2 },
+      {
+        deletedAt: null, status: 'RECRUITING', expiresAt: { $gt: at }, modeCode: 'RANKED',
+        rankCode: { $in: ['GOLD', 'ANY'] }, serverCode: { $in: ['TOKYO', 'ANY'] }, remainingSlots: 1,
+      },
       { $or: [{ createdAt: { $lt: after.createdAt } }, { createdAt: after.createdAt, _id: { $lt: 'p_9' } }] },
     ],
   });
