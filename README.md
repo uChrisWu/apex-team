@@ -2,13 +2,14 @@
 
 Apex 组队微信小程序（微信原生小程序前端）。需求见 [apex-team-frontend-requirements.md](apex-team-frontend-requirements.md)（V0.4）。
 
-当前进度：需求文档第 5 节步骤 1–4 已在**模拟模式**下完成（四个页面、复用组件、统一接口层、模拟后端、登录引导、复制联系、编辑/结束/删除、状态与错误提示）。步骤 5（接入真实云函数、真机联调）待后端就绪后进行。
+当前进度：需求文档第 5 节步骤 1–4 已完成（四个页面、复用组件、统一接口层、模拟后端、登录引导、复制联系、编辑/结束/删除、状态与错误提示）。前端已接入开发环境的云函数后端；步骤 5 的真机联调与验收待进行。
 
 ## 预览
 
 1. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)。
 2. 选择“导入项目”，目录选本仓库根目录。AppID 可先用测试号（`project.config.json` 中为 `touristappid`）；接入云开发时需改为正式 AppID。
-3. 默认运行在模拟模式，页面顶部显示“模拟模式”提示。数据保存在本机缓存，不会真实发布。
+3. 默认连接开发环境的云函数后端（`miniprogram/config/env.js` 中 `apiMode: 'cloud'`）。如需离线演示，改为 `apiMode: 'mock'`：页面顶部会显示“模拟模式”提示，数据只保存在本机缓存，不会真实发布。
+4. 修改代码后若开发者工具仍显示旧内容（项目位于 WSL 时常见），点击“清缓存 → 清除全部缓存”后重新编译。
 
 ### 模拟调试面板
 
@@ -38,7 +39,8 @@ miniprogram/
     publish/               发布组队；带 ?id= 时为编辑
     detail/                组队详情与复制联系
     mine/                  我的发布
-tests/                     Node 测试（模拟后端 + 页面冒烟）
+cloudfunctions/apex/       云函数后端（业务层 service.js + 文档型数据库 store.js）
+tests/                     Node 测试（模拟后端、页面冒烟、云函数业务层）
 docs/acceptance.md         验收清单与真机验证记录
 ```
 
@@ -52,7 +54,7 @@ npm test
 
 ## 接入真实后端
 
-微信云开发后端源码、PostgreSQL 权限、索引、测试配置初始化及部署步骤见 [docs/backend-cloud.md](docs/backend-cloud.md)。
+后端为云函数 `cloudfunctions/apex` + 云开发文档型数据库。集合、权限、索引、配置导入及部署步骤见 [docs/backend-cloud.md](docs/backend-cloud.md)。
 
 1. 在 `miniprogram/config/env.js` 中设置 `apiMode: 'cloud'`，并填写 `cloudEnv` 和 `cloudFunctionName`。
 2. 前端以 `{ action, payload }` 调用一个业务云函数，`action` 为接口名（如 `listPosts`）。返回值需为约定的 `{ code, data | message, requestId }`。

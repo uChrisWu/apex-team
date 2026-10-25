@@ -69,8 +69,8 @@ function loadPage(name) {
 const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- 场景 ----------
-// 先把模拟延迟设为 0，再加载其他模块
-require(path.join(ROOT, 'config', 'env')).mockLatencyMs = 0;
+// 先切到 mock 模式并把模拟延迟设为 0，再加载其他模块（不依赖 env.js 的当前设置）
+Object.assign(require(path.join(ROOT, 'config', 'env')), { apiMode: 'mock', mockLatencyMs: 0 });
 const auth = require(path.join(ROOT, 'utils', 'auth'));
 const api = require(path.join(ROOT, 'services', 'api'));
 const { devtools } = require(path.join(ROOT, 'services', 'mock', 'transport-mock'));

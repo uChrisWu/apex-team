@@ -1,13 +1,13 @@
-// Print the labelled mock options as a development-only PostgreSQL seed.
+// 生成开发环境的配置文档（JSON Lines，一行一个文档），用于在云开发控制台导入 app_config 集合。
+// 选项来自带“测试”标记的 mock 配置，只用于开发环境。
 const { TEST_CONFIG } = require('../miniprogram/services/mock/fixtures');
 
 const ordered = (items) => items.map((item, index) => ({ ...item, order: index }));
-const config = JSON.stringify({
+const doc = {
+  _id: 'main',
   modes: ordered(TEST_CONFIG.modes),
   ranks: ordered(TEST_CONFIG.ranks),
   servers: ordered(TEST_CONFIG.servers),
   limits: TEST_CONFIG.limits,
-}).replace(/'/g, "''");
-process.stdout.write(`INSERT INTO apex_private.app_config (id, data)
-VALUES ('main', '${config}'::jsonb)
-ON CONFLICT (id) DO NOTHING;\n`);
+};
+process.stdout.write(JSON.stringify(doc) + '\n');
