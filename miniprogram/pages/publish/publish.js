@@ -128,7 +128,8 @@ Page({
       changes.bump();
       auth.refresh();
       wx.showToast({ title: api.isMock ? '已发布（模拟）' : '发布成功', icon: 'success' });
-      setTimeout(() => wx.redirectTo({ url: `/pages/detail/detail?id=${encodeURIComponent(res.id)}` }), 600);
+      // fresh=1：详情页提示把刚发布的信息转发到群里
+      setTimeout(() => wx.redirectTo({ url: `/pages/detail/detail?id=${encodeURIComponent(res.id)}&fresh=1` }), 600);
     } catch (err) {
       const e = toAppError(err);
       if (e.code === 'ACTIVE_POST_EXISTS') {

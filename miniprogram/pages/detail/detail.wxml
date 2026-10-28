@@ -70,7 +70,15 @@
       {{post.status !== 'RECRUITING' ? '当前不可联系' : copying ? '正在确认…' : '复制游戏 ID'}}
     </view>
     <view class="hint copy-hint">复制游戏 ID 不会占用名额，也不代表加入成功。</view>
+    <button wx:if="{{post.status === 'RECRUITING'}}" class="btn contact share-btn" open-type="share" hover-class="btn-hover">转发给队友</button>
     <view class="report" bindtap="onReport">举报这条信息</view>
+  </view>
+
+  <!-- 发布者：转发到群里招人 -->
+  <view wx:if="{{post.canDelete && post.status === 'RECRUITING'}}" class="card share-card {{justPublished ? 'share-card--fresh' : ''}}">
+    <view class="share-title">{{justPublished ? '发布成功！转发到群里，让更多人看到' : '转发到群里，更快找到队友'}}</view>
+    <view class="hint">群友点开卡片即可查看并申请加入。</view>
+    <button class="btn btn--primary share-btn" open-type="share" hover-class="btn-hover">转发到微信群</button>
   </view>
 
   <!-- 发布者：入队申请 -->

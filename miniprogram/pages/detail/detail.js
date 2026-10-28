@@ -17,6 +17,7 @@ Page({
     copying: false,
     limits: limitsOf(null),
     canSubscribe: false,
+    justPublished: false, // 刚发布成功，突出转发到群的引导
 
     // 申请人
     myRequest: null,
@@ -39,6 +40,7 @@ Page({
   onLoad(options) {
     this.postId = decodeURIComponent(options.id || '');
     this.listVersion = options.v ? Number(options.v) : null;
+    this.setData({ justPublished: options.fresh === '1' });
     auth.ready().then(() => this.load());
   },
 
@@ -51,7 +53,7 @@ Page({
     this.load({ silent: true }).then(() => wx.stopPullDownRefresh());
   },
 
-  // 转发这条招募；信息不存在时转发首页
+  // 右上角菜单与页面内的转发按钮都转发这条招募；信息不存在时转发首页
   onShareAppMessage() {
     return sharePost(this.data.status === 'ready' ? this.data.post : null);
   },

@@ -157,8 +157,17 @@ test('mock 模式下主要页面流程', async (t) => {
     await settle(700);
     const [kind, url] = calls.nav.pop();
     assert.equal(kind, 'redirectTo');
-    createdId = decodeURIComponent(url.split('id=')[1]);
+    const query = url.split('?')[1].split('&').map((kv) => kv.split('='));
+    createdId = decodeURIComponent(query.find(([k]) => k === 'id')[1]);
     assert.ok(createdId.startsWith('post-'));
+    assert.ok(query.some(([k, v]) => k === 'fresh' && v === '1'), '发布后详情页提示转发到群');
+
+    const fresh = loadPage('detail');
+    fresh.onLoad({ id: createdId, fresh: '1' });
+    await settle();
+    assert.equal(fresh.data.justPublished, true);
+    assert.equal(fresh.data.post.canDelete, true);
+    assert.equal(fresh.onShareAppMessage().path, `/pages/detail/detail?id=${encodeURIComponent(createdId)}`);
 
     const again = loadPage('publish');
     again.onLoad({});

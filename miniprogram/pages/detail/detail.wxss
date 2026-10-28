@@ -57,3 +57,10 @@
 .tag--req-ACCEPTED { background: var(--c-ok-soft); color: var(--c-ok); }
 
 .report { margin-top: 24rpx; text-align: center; font-size: 24rpx; color: var(--c-text-3); }
+
+/* 转发：button 需去掉默认样式 */
+.share-btn { width: 100%; margin: 24rpx 0 0; padding: 0; line-height: inherit; font-weight: normal; }
+.share-btn::after { border: none; }
+.share-title { font-weight: 600; }
+.share-card .hint { margin-top: 8rpx; }
+.share-card--fresh { background: var(--c-brand-soft); }
