@@ -63,11 +63,12 @@ const APP_CONFIG = {
   },
   // 订阅消息：templateId 留空时不请求订阅、不发送提醒，仅保留小程序内提醒。
   // fields 把云函数提供的值对应到模板关键词：申请人 = thing1，申请内容 = thing2。
-  // miniprogramState 为点击通知打开的版本：开发测试期间用 developer，正式发布后改为 formal。
+  // miniprogramState 为点击通知打开的版本：developer 开发版 / trial 体验版 / formal 正式版。
+  // 已于 2026-10-28 正式发布，使用 formal；开发版只有开发者能打开，普通用户无法进入。
   notify: {
     templateId: 'HXVFr7_2q6iHrjzJ_Gxw3ng6lnehgx5EO4nvggAxYpQ',
     fields: { applicant: 'thing1', content: 'thing2' },
-    miniprogramState: 'developer',
+    miniprogramState: 'formal',
   },
 };
 
