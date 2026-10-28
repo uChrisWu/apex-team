@@ -7,6 +7,7 @@ const { decoratePost, decorateRequest } = require('../../utils/post-view');
 const { validateApplyForm, limitsOf, activeOptions } = require('../../utils/validate');
 const { requestApplyNotice } = require('../../utils/notify');
 const { toAppError, showError } = require('../../utils/errors');
+const { sharePost } = require('../../utils/share');
 
 Page({
   data: {
@@ -48,6 +49,11 @@ Page({
 
   onPullDownRefresh() {
     this.load({ silent: true }).then(() => wx.stopPullDownRefresh());
+  },
+
+  // 转发这条招募；信息不存在时转发首页
+  onShareAppMessage() {
+    return sharePost(this.data.status === 'ready' ? this.data.post : null);
   },
 
   async load({ silent = false } = {}) {

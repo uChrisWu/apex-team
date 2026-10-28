@@ -5,6 +5,7 @@ const { toAppError } = require('../../utils/errors');
 const changes = require('../../utils/changes');
 const { mergeUnique } = require('../../utils/list');
 const { activeOptions } = require('../../utils/validate');
+const { shareHome } = require('../../utils/share');
 
 const ALL = { code: '', name: '全部' };
 const REMAINING_OPTIONS = [
@@ -60,6 +61,10 @@ Page({
 
   onReachBottom() {
     this.loadMore();
+  },
+
+  onShareAppMessage() {
+    return shareHome();
   },
 
   async init() {

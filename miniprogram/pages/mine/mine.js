@@ -6,6 +6,7 @@ const { loadConfig } = require('../../utils/config-store');
 const { decoratePost } = require('../../utils/post-view');
 const { mergeUnique } = require('../../utils/list');
 const { toAppError, showError } = require('../../utils/errors');
+const { shareHome } = require('../../utils/share');
 
 // 模拟调试面板只在 mock 模式下加载
 const devtools = api.isMock ? require('../../services/mock/transport-mock').devtools : null;
@@ -44,6 +45,10 @@ Page({
 
   onReachBottom() {
     this.loadMore();
+  },
+
+  onShareAppMessage() {
+    return shareHome();
   },
 
   syncLogin() {
