@@ -4,7 +4,7 @@ const changes = require('../../utils/changes');
 const postActions = require('../../utils/post-actions');
 const { loadConfig } = require('../../utils/config-store');
 const { decoratePost, decorateRequest } = require('../../utils/post-view');
-const { validateApplyForm, limitsOf, activeOptions } = require('../../utils/validate');
+const { validateApplyForm, validateTeamInfo, limitsOf, activeOptions } = require('../../utils/validate');
 const { requestApplyNotice } = require('../../utils/notify');
 const { toAppError, showError } = require('../../utils/errors');
 const { sharePost } = require('../../utils/share');
@@ -30,7 +30,12 @@ Page({
     requests: [],
     requestsStatus: 'idle', // idle | loading | error | ready
     decidingId: '',
+    teamInfoDraft: '',
+    teamInfoError: '',
+    savingTeamInfo: false,
   },
+
+  teamInfoDirty: false, // 房主正在编辑组队方式时，刷新不覆盖输入
 
   postId: '',
   listVersion: null, // 从大厅进入时卡片上的 version，用于判断大厅是否需要刷新
@@ -75,6 +80,7 @@ Page({
       this.setData({
         status: 'ready',
         post: decoratePost(post, config),
+        teamInfoDraft: this.teamInfoDirty ? this.data.teamInfoDraft : post.teamInfo || '',
         myRequest: post.myRequest ? decorateRequest(post.myRequest) : null,
         limits: limitsOf(config),
         canSubscribe: !!(config.notify && config.notify.templateId),
@@ -231,6 +237,14 @@ Page({
       this.listVersion = res.post.version;
       this.setData({ post: decoratePost(res.post, this.config) });
       this.loadRequests();
+      if (accepting && !res.post.teamInfo && !this.teamInfoDirty) {
+        wx.showModal({
+          title: '填写组队方式',
+          content: '可以在下方“组队方式”中填写私人房间名和密码等，只有你同意的队友能看到。',
+          showCancel: false,
+          confirmText: '知道了',
+        });
+      }
     } catch (err) {
       showError(err);
       this.load({ silent: true });
@@ -244,6 +258,44 @@ Page({
     requestApplyNotice(this.config).then((accepted) => {
       wx.showToast({ title: accepted ? '已开启一次申请提醒' : '未开启提醒', icon: 'none' });
     });
+  },
+
+  // ---------- 组队方式（房主填写，已同意的队友可见） ----------
+
+  onTeamInfoInput(e) {
+    this.teamInfoDirty = true;
+    this.setData({ teamInfoDraft: e.detail.value, teamInfoError: '' });
+  },
+
+  async onSaveTeamInfo() {
+    if (this.data.savingTeamInfo) return;
+    const { value, error } = validateTeamInfo(this.data.teamInfoDraft, this.config);
+    if (error) {
+      this.setData({ teamInfoError: error });
+      return;
+    }
+    this.setData({ savingTeamInfo: true });
+    try {
+      const res = await api.updateTeamInfo(this.postId, value);
+      this.teamInfoDirty = false;
+      this.setData({
+        teamInfoDraft: res.teamInfo,
+        'post.teamInfo': res.teamInfo,
+        'post.teamInfoUpdatedAt': res.teamInfoUpdatedAt,
+      });
+      wx.showToast({ title: res.teamInfo ? '已更新，队友可见' : '已清除', icon: 'success' });
+    } catch (err) {
+      const e = toAppError(err);
+      showError(e);
+      if (e.code === 'POST_UNAVAILABLE' || e.code === 'NOT_FOUND') this.load({ silent: true });
+    } finally {
+      this.setData({ savingTeamInfo: false });
+    }
+  },
+
+  onCopyTeamInfo() {
+    const info = this.data.myRequest && this.data.myRequest.teamInfo;
+    if (info) wx.setClipboardData({ data: info });
   },
 
   // ---------- 举报 ----------

@@ -64,3 +64,9 @@
 .share-title { font-weight: 600; }
 .share-card .hint { margin-top: 8rpx; }
 .share-card--fresh { background: var(--c-brand-soft); }
+
+/* 组队方式 */
+.team-info-input { width: 100%; box-sizing: border-box; height: auto; min-height: 120rpx; padding: 20rpx 24rpx; margin-top: 16rpx; }
+.team-info { margin-top: 12rpx; padding: 16rpx; border-radius: 12rpx; background: var(--c-surface); }
+.team-info-label { font-size: 24rpx; color: var(--c-text-3); }
+.team-info-text { margin: 8rpx 0; white-space: pre-wrap; word-break: break-all; font-weight: 600; }

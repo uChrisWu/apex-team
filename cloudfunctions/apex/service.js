@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 
 const ACTIONS = new Set([
   'getConfig', 'ensureUser', 'listPosts', 'getPost', 'getContact', 'createPost', 'updatePost', 'closePost', 'deletePost', 'listMyPosts',
-  'applyToPost', 'cancelApplication', 'listPostRequests', 'decideRequest', 'reportPost',
+  'applyToPost', 'cancelApplication', 'listPostRequests', 'decideRequest', 'reportPost', 'updateTeamInfo',
 ]);
 const FORM_FIELDS = ['modeCode', 'rankCode', 'serverCode', 'currentPlayers', 'gameId', 'note'];
 const MAX_PAGE_SIZE = 50;
@@ -172,6 +172,16 @@ function requestView(request, post, now) {
     createdAt: toIso(request.createdAt),
     decidedAt: toIso(request.decidedAt),
   };
+}
+
+// 组队方式（私人房间等）只给发布者和已被同意的申请人看
+function withTeamInfo(view, post) {
+  return Object.assign(view, { teamInfo: post.teamInfo || '', teamInfoUpdatedAt: toIso(post.teamInfoUpdatedAt) });
+}
+
+// 招募中或已满员时可以更新组队方式；已结束、已过期后不再需要
+function canShareTeamInfo(post, now) {
+  return ['RECRUITING', 'FULL'].includes(effectiveStatus(post, now));
 }
 
 function postPatchForCount(post, currentPlayers, at) {
@@ -367,10 +377,14 @@ function createService({ store, wechat, now = () => new Date(), clock = () => Da
       if (!post || post.deletedAt) fail('NOT_FOUND', '信息不存在或已删除');
       const user = openid ? await store.getUser(openid) : null;
       const view = detailView(post, user, at);
-      // 非发布者可看到自己对这条信息的申请状态
-      if (user && user.userId !== post.ownerId) {
+      if (user && user.userId === post.ownerId) {
+        withTeamInfo(view, post);
+        view.canEditTeamInfo = canShareTeamInfo(post, at);
+      } else if (user) {
+        // 非发布者可看到自己对这条信息的申请状态；被同意后可看到组队方式
         const request = await store.getRequest(requestIdFor(post.id, user.userId));
         view.myRequest = request ? requestView(request, post, at) : null;
+        if (request && request.status === 'ACCEPTED') withTeamInfo(view.myRequest, post);
       }
       return view;
     },
@@ -564,10 +578,31 @@ function createService({ store, wechat, now = () => new Date(), clock = () => Da
         }
         const requestPatch = { status: payload.decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED', decidedAt: at, updatedAt: at };
         await tx.updateRequest(request.id, requestPatch);
+        const postView = withTeamInfo(detailView(updatedPost, user, at), updatedPost);
+        postView.canEditTeamInfo = canShareTeamInfo(updatedPost, at);
         return {
           request: requestView(Object.assign({}, request, requestPatch), updatedPost, at),
-          post: detailView(updatedPost, user, at),
+          post: postView,
         };
+      });
+    },
+
+    // 房主填写私人房间、语音频道等组队方式，只对已同意的申请人展示；不改变 version，不影响编辑
+    async updateTeamInfo(payload, openid, at) {
+      if (!hasOnly(payload, ['postId', 'teamInfo'])) invalid('请求内容无效');
+      requirePostId(payload);
+      const config = await loadConfig();
+      const teamInfo = validateText(payload.teamInfo, { required: false, max: config.limits.teamInfoMaxLength || 100, label: '组队方式' });
+      await requireUser(openid, store);
+      await checkContent(openid, [teamInfo]);
+      return inTransaction(async (tx) => {
+        const user = await requireUser(openid, tx);
+        const post = await tx.getPost(payload.postId);
+        checkOwnerWrite(post, user, undefined, false, at);
+        if (!canShareTeamInfo(post, at)) fail('POST_UNAVAILABLE', '该信息已结束，无法更新组队方式');
+        const patch = { teamInfo, teamInfoUpdatedAt: at };
+        await tx.updatePost(post.id, patch);
+        return withTeamInfo({ id: post.id }, Object.assign({}, post, patch));
       });
     },
 

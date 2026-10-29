@@ -156,9 +156,10 @@ users 另保存 lastGameId（最近一次发布或申请使用的游戏 ID），
 - 同意在事务中完成：申请改为 ACCEPTED、人数 +1、版本递增；达到上限时状态改为 FULL 并释放有效招募引用。并发同意不能使人数超过上限。
 - 拒绝只改变申请状态，不改变人数；撤回只允许申请人对 PENDING 申请操作。
 - 待处理申请数量只统计仍在招募中的信息（每人最多一条）。
+- 组队方式：发布者可在信息招募中或已满员时填写 teamInfo（私人房间、语音频道等，选填，去首尾空格，最多 100 个码点，空字符串表示清除），写入前做内容安全检测；不改变 version，不与编辑冲突。teamInfo 只返回给发布者和该信息下申请状态为 ACCEPTED 的申请人，不出现在列表、公开详情和举报快照中。
 
 ### BE-09 内容安全与提醒
-- 发布、编辑与申请中用户填写的文字（游戏 ID、备注、留言）在写入前调用微信内容安全检测（msgSecCheck 2.0，使用发起人的 OpenID）；结果为 risky 时返回 CONTENT_RISKY，不写入。
+- 发布、编辑、申请与组队方式中用户填写的文字（游戏 ID、备注、留言、组队方式）在写入前调用微信内容安全检测（msgSecCheck 2.0，使用发起人的 OpenID）；结果为 risky 时返回 CONTENT_RISKY，不写入。
 - 检测服务异常时拒绝写入并返回 INTERNAL_ERROR，不放行未检测的内容。
 - 新申请产生后，向发布者发送订阅消息（仅在配置了模板 ID 时）；用户未订阅、额度用完等发送失败只记录日志，不影响申请结果。重复提交的申请不重复提醒。
 - 订阅消息内容只包含申请人游戏 ID、队伍概要和时间，不包含微信身份信息。
@@ -187,6 +188,7 @@ users 另保存 lastGameId（最近一次发布或申请使用的游戏 ID），
 | cancelApplication | 申请人 | postId | 撤回待处理的申请 |
 | listPostRequests | 所有者 | postId | 该信息的申请（不含已撤回），待处理在前，含申请人游戏 ID 与留言 |
 | decideRequest | 所有者 | requestId、decision（ACCEPT / REJECT） | 同意时人数 +1，达到上限满员；返回申请与更新后的详情 |
+| updateTeamInfo | 所有者 | postId、teamInfo | 保存组队方式，返回 teamInfo 与 teamInfoUpdatedAt；信息已结束、已过期或已删除时返回 POST_UNAVAILABLE / NOT_FOUND |
 | reportPost | 登录，非发布者 | postId、reason、detail? | 记录举报（同一用户对同一信息只记录一次），返回是否重复 |
 
 请求/响应补充约定：
@@ -201,7 +203,7 @@ users 另保存 lastGameId（最近一次发布或申请使用的游戏 ID），
 
 ### 返回字段补充
 - listPosts 每条至少返回 id、modeCode、rankCode、serverCode、currentPlayers、maxPlayers、remainingSlots、note、createdAt、expiresAt、status。
-- getPost 返回公开卡片字段、updatedAt、version、canEdit、canClose、canDelete，不返回 gameId；已登录的非发布者另返回 myRequest（本人申请的状态等）。
+- getPost 返回公开卡片字段、updatedAt、version、canEdit、canClose、canDelete，不返回 gameId；已登录的非发布者另返回 myRequest（本人申请的状态等，已同意时含 teamInfo）；发布者另返回 teamInfo 与 canEditTeamInfo。decideRequest 返回的详情同样包含发布者可见的 teamInfo。
 - listMyPosts 返回本人记录，可包含 gameId、version、操作权限和 pendingRequestCount，供编辑表单预填；访客及其他用户不能获取这些私有记录。
 - getContact 不承担编辑表单预填职责，仅向已登录用户返回有效招募的联系信息。
 - getConfig 返回游戏模式、段位、服务器的稳定代码、展示名称、顺序与启停状态，以及模式人数上限；订阅消息配置只公开模板 ID。列表和详情的展示名称可由前端根据配置映射。

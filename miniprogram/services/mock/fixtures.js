@@ -58,6 +58,7 @@ const APP_CONFIG = {
     noteMaxLength: 100,
     applyMessageMaxLength: 50,
     reportDetailMaxLength: 100,
+    teamInfoMaxLength: 100, // 组队方式（私人房间等）
     expireMinutes: 120,
     pageSize: 20,
   },

@@ -58,6 +58,9 @@ module.exports = {
   listPostRequests: (postId) => call('listPostRequests', { postId }),
   decideRequest: (requestId, decision) => call('decideRequest', { requestId, decision }),
 
+  // 组队方式：房主填写私人房间等信息，只有被同意的申请人能看到；空字符串表示清除
+  updateTeamInfo: (postId, teamInfo) => call('updateTeamInfo', { postId, teamInfo }),
+
   // 举报：reason 为配置中的举报原因代码
   reportPost: (postId, reason) => call('reportPost', { postId, reason }),
 };

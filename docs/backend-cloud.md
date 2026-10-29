@@ -19,7 +19,7 @@
 | 集合 | `_id` | 主要字段 |
 | --- | --- | --- |
 | `users` | 微信 OpenID | `userId`（内部 UUID，对外返回）、`activePostId`、`lastGameId`、`createdAt` |
-| `team_posts` | `p_` + SHA-256(`userId:requestId`) | `ownerId`、`modeCode`、`rankCode`、`serverCode`、`currentPlayers`、`maxPlayers`、`remainingSlots`、`gameId`、`note`、`status`、`createdAt`、`updatedAt`、`expiresAt`、`deletedAt`、`version`、`createRequestId` |
+| `team_posts` | `p_` + SHA-256(`userId:requestId`) | `ownerId`、`modeCode`、`rankCode`、`serverCode`、`currentPlayers`、`maxPlayers`、`remainingSlots`、`gameId`、`note`、`status`、`createdAt`、`updatedAt`、`expiresAt`、`deletedAt`、`version`、`createRequestId`、`teamInfo`（组队方式，仅发布者与已同意的申请人可见）、`teamInfoUpdatedAt` |
 | `join_requests` | `r_` + SHA-256(`postId:applicantUserId`) | `postId`、`postOwnerId`、`applicantId`、`applicantGameId`、`message`、`status`、`createdAt`、`updatedAt`、`decidedAt` |
 | `reports` | `rp_` + SHA-256(`postId:reporterUserId`) | `postId`、`postOwnerId`、`reporterId`、`reason`、`detail`、`snapshot`（举报时的游戏 ID、备注等）、`status`（OPEN / RESOLVED）、`createdAt` |
 | `app_config` | `main` | `modes`（含 `maxPlayers`）、`ranks`、`servers`、`reportReasons`（`{ code, name, order, enabled }`）、`limits`、`notify` |
@@ -67,7 +67,7 @@
 
 - 公共接口：`getConfig`、`listPosts`、`getPost`。列表与详情不返回游戏 ID、OpenID 或创建请求 ID；`getPost` 只对已建立账号的所有者返回可操作权限。
 - 登录接口：`ensureUser`，返回 `{ userId, hasActivePost, activePostId }`。发布、联系、我的发布等私有接口要求先调用过 `ensureUser`，否则返回 `UNAUTHENTICATED`。
-- 登录后接口：`getContact`、`createPost`、`listMyPosts`；所有者写接口：`updatePost`、`closePost`、`deletePost`。错误码与 V0.4 后端需求文档一致。
+- 登录后接口：`getContact`、`createPost`、`listMyPosts`；所有者写接口：`updatePost`、`closePost`、`deletePost`、`updateTeamInfo`。错误码与 V0.4 后端需求文档一致。
 - 分页按创建时间、记录 ID 倒序；游标是绑定筛选条件或当前账号的不透明字符串，筛选变化时须从第一页重新加载。
 - 日志只记录追踪 ID、接口名、结果码和时间，不记录 OpenID、游戏 ID 或数据库错误原文。
 

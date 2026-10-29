@@ -2,7 +2,7 @@
 // 不依赖 wx，存储通过 load/save 注入，因此也能在 Node 中运行。
 // 内容安全检测在模拟模式下用关键词“违规”代替微信接口。
 const { APP_CONFIG, seedPosts } = require('./fixtures');
-const { validatePostForm, validateApplyForm, FORM_FIELDS } = require('../../utils/validate');
+const { validatePostForm, validateApplyForm, validateTeamInfo, FORM_FIELDS } = require('../../utils/validate');
 
 const MAX_PAGE_SIZE = 50;
 const MOCK_RISKY_WORD = '违规';
@@ -102,6 +102,15 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
     };
   }
 
+  // 组队方式只给发布者和已被同意的申请人看；招募中或已满员时可以更新
+  function withTeamInfo(view, post) {
+    return Object.assign(view, { teamInfo: post.teamInfo || '', teamInfoUpdatedAt: post.teamInfoUpdatedAt || null });
+  }
+
+  function canShareTeamInfo(post) {
+    return ['RECRUITING', 'FULL'].includes(effectiveStatus(post));
+  }
+
   // 按发布时间倒序、ID 倒序排序；游标为最后一条的“时间|ID”
   function paginate(posts, cursor, limit, view) {
     const size = Math.min(Math.max(Number(limit) || APP_CONFIG.limits.pageSize, 1), MAX_PAGE_SIZE);
@@ -198,9 +207,13 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
       const post = findPost(payload.postId);
       if (!post) return fail('NOT_FOUND', '信息不存在或已删除');
       const view = detailView(post, openid);
-      if (openid && post.ownerOpenid !== openid) {
+      if (openid && post.ownerOpenid === openid) {
+        withTeamInfo(view, post);
+        view.canEditTeamInfo = canShareTeamInfo(post);
+      } else if (openid) {
         const request = requestOf(post.id, openid);
         view.myRequest = request ? requestView(request) : null;
+        if (request && request.status === 'ACCEPTED') withTeamInfo(view.myRequest, post);
       }
       return ok(view);
     },
@@ -375,7 +388,24 @@ function createMockBackend({ load, save, now = () => Date.now() }) {
       request.status = payload.decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';
       request.decidedAt = new Date(now()).toISOString();
       persist();
-      return ok({ request: requestView(request), post: detailView(post, openid) });
+      const postView = withTeamInfo(detailView(post, openid), post);
+      postView.canEditTeamInfo = canShareTeamInfo(post);
+      return ok({ request: requestView(request), post: postView });
+    },
+
+    updateTeamInfo(payload, openid) {
+      if (!openid || !db.users[openid]) return fail('UNAUTHENTICATED', '请先登录');
+      const post = findPost(payload.postId);
+      const denied = checkOwnerWrite(post, openid, undefined, false);
+      if (denied) return denied;
+      const { value, error } = validateTeamInfo(payload.teamInfo, APP_CONFIG);
+      if (error) return fail('VALIDATION_ERROR', error);
+      if (isRisky(value)) return fail('CONTENT_RISKY', '内容包含不合规信息，请修改后重试');
+      if (!canShareTeamInfo(post)) return fail('POST_UNAVAILABLE', '该信息已结束，无法更新组队方式');
+      post.teamInfo = value;
+      post.teamInfoUpdatedAt = new Date(now()).toISOString();
+      persist();
+      return ok(withTeamInfo({ id: post.id }, post));
     },
   };
 

@@ -4,6 +4,7 @@ const DEFAULT_LIMITS = {
   gameIdMaxLength: 64,
   noteMaxLength: 100,
   applyMessageMaxLength: 50,
+  teamInfoMaxLength: 100,
 };
 
 const FORM_FIELDS = ['modeCode', 'rankCode', 'serverCode', 'currentPlayers', 'gameId', 'note'];
@@ -89,6 +90,13 @@ function validateApplyForm(input, config) {
   return { values, errors };
 }
 
+function validateTeamInfo(input, config) {
+  const limits = limitsOf(config);
+  const value = String(input || '').trim();
+  const error = codePointLength(value) > limits.teamInfoMaxLength ? `组队方式最多 ${limits.teamInfoMaxLength} 个字符` : '';
+  return { value, error };
+}
+
 module.exports = {
   DEFAULT_LIMITS,
   FORM_FIELDS,
@@ -98,5 +106,6 @@ module.exports = {
   allowedCounts,
   codePointLength,
   validatePostForm,
+  validateTeamInfo,
   validateApplyForm,
 };

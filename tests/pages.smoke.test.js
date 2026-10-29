@@ -168,6 +168,11 @@ test('mock 模式下主要页面流程', async (t) => {
     assert.equal(fresh.data.justPublished, true);
     assert.equal(fresh.data.post.canDelete, true);
     assert.equal(fresh.onShareAppMessage().path, `/pages/detail/detail?id=${encodeURIComponent(createdId)}`);
+    assert.equal(fresh.data.post.canEditTeamInfo, true, '房主可以填写组队方式');
+    fresh.onTeamInfoInput({ detail: { value: ' 私人房间 abc ' } });
+    await fresh.onSaveTeamInfo();
+    assert.equal(fresh.data.post.teamInfo, '私人房间 abc');
+    assert.equal(fresh.data.teamInfoDraft, '私人房间 abc');
 
     const again = loadPage('publish');
     again.onLoad({});

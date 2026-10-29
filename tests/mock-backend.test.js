@@ -228,3 +228,17 @@ test('模拟后端：申请加入、同意 +1、满员后申请失效', () => {
   assert.equal(okData('getPost', { postId: post.id }, 'user-c').myRequest.status, 'EXPIRED');
   assert.equal(okData('ensureUser', {}, A).pendingRequestCount, 0);
 });
+
+test('模拟后端：组队方式只对已同意的申请人可见', () => {
+  const { okData, call } = setup();
+  for (const o of [A, B, 'user-c']) okData('ensureUser', {}, o);
+  const post = okData('createPost', Object.assign({ requestId: 't' }, FORM, { currentPlayers: 1 }), A);
+  const rb = okData('applyToPost', { postId: post.id, gameId: 'B' }, B);
+  okData('applyToPost', { postId: post.id, gameId: 'C' }, 'user-c');
+  okData('decideRequest', { requestId: rb.id, decision: 'ACCEPT' }, A);
+  assert.equal(call('updateTeamInfo', { postId: post.id, teamInfo: '房间' }, B).code, 'FORBIDDEN');
+  assert.equal(call('updateTeamInfo', { postId: post.id, teamInfo: '违规' }, A).code, 'CONTENT_RISKY');
+  assert.equal(okData('updateTeamInfo', { postId: post.id, teamInfo: '房间 abc' }, A).teamInfo, '房间 abc');
+  assert.equal(okData('getPost', { postId: post.id }, B).myRequest.teamInfo, '房间 abc');
+  assert.equal(okData('getPost', { postId: post.id }, 'user-c').myRequest.teamInfo, undefined);
+});

@@ -543,3 +543,33 @@ test('举报：登录后可举报他人信息，重复举报只记录一次，�
   assert.equal((await t.call('reportPost', { postId: post.id, reason: 'FAKE' }, 'openid-d')).code, 'UNAUTHENTICATED');
   assert.ok((await t.ok('getConfig', {}, null)).reportReasons.length >= 1);
 });
+
+test('组队方式：只有房主能写，满员后仍可更新，只对已同意的申请人可见', async () => {
+  const t = setup();
+  const post = await postWithApplicants(t, B, C);
+  const rb = await t.ok('applyToPost', { postId: post.id, gameId: 'B' }, B);
+  await t.ok('applyToPost', { postId: post.id, gameId: 'C' }, C);
+  await t.ok('decideRequest', { requestId: rb.id, decision: 'ACCEPT' }, A);
+
+  const ownerView = await t.ok('getPost', { postId: post.id }, A);
+  assert.equal(ownerView.teamInfo, '');
+  assert.equal(ownerView.canEditTeamInfo, true);
+  assert.equal((await t.call('updateTeamInfo', { postId: post.id, teamInfo: '房间 abc' }, B)).code, 'FORBIDDEN');
+  assert.equal((await t.call('updateTeamInfo', { postId: post.id, teamInfo: 'x'.repeat(101) }, A)).code, 'VALIDATION_ERROR');
+  assert.equal((await t.call('updateTeamInfo', { postId: post.id, teamInfo: '违规房间' }, A)).code, 'CONTENT_RISKY');
+
+  const saved = await t.ok('updateTeamInfo', { postId: post.id, teamInfo: ' 私人房间 abc 密码 6688 ' }, A);
+  assert.equal(saved.teamInfo, '私人房间 abc 密码 6688');
+  const after = await t.ok('getPost', { postId: post.id }, A);
+  assert.equal(after.version, ownerView.version, '更新组队方式不改变版本号');
+
+  assert.equal((await t.ok('getPost', { postId: post.id }, B)).myRequest.teamInfo, '私人房间 abc 密码 6688');
+  const pending = await t.ok('getPost', { postId: post.id }, C);
+  assert.equal(pending.teamInfo, undefined);
+  assert.equal(pending.myRequest.teamInfo, undefined, '未被同意的申请人看不到');
+  assert.equal((await t.ok('getPost', { postId: post.id }, null)).teamInfo, undefined);
+  assert.equal((await t.ok('listPosts', {}, null)).items[0].teamInfo, undefined);
+
+  await t.ok('closePost', { postId: post.id, version: after.version }, A);
+  assert.equal((await t.call('updateTeamInfo', { postId: post.id, teamInfo: '' }, A)).code, 'POST_UNAVAILABLE');
+});
