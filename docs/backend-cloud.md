@@ -73,6 +73,8 @@
 
 ## 联调记录
 
+2026-10-29（组队方式）：以 ZIP 方式重新部署 `apex`，新增 `updateTeamInfo`。无微信身份调用：`getConfig`、`listPosts` 返回 `OK`（列表不含 `teamInfo`），`updateTeamInfo` 返回 `UNAUTHENTICATED`。`app_config/main.limits` 未写入 `teamInfoMaxLength`，前后端均按默认 100 处理。待在小程序中验证：房主保存、已同意申请人可见。
+
 2026-10-25（V0.5 部署）：新建 `join_requests` 集合（`ADMINONLY`，索引 `post_status`）；`app_config/main` 由测试配置替换为正式清单（8 个模式含人数上限、9 个段位、12 个服务器含“不限”“其他”，`notify.templateId` 为空）；迁移 1 条仍有效的旧记录（`TEST_FRANKFURT` → `FRANKFURT`，补 `remainingSlots`）；以 ZIP 方式重新部署 `apex`（含 `config.json` 云调用权限声明）。无微信身份调用：`getConfig`、`listPosts`（含新服务器代码筛选）返回 `OK`，旧服务器代码筛选返回 `VALIDATION_ERROR`，新增的申请接口均返回 `UNAUTHENTICATED`。待在小程序中验证：内容安全检测（需 OpenID）、申请与同意流程、订阅消息（模板 ID 尚未配置）。
 
 2026-10-25（CLI 部署）：用 CAM 子账号密钥通过 `@cloudbase/manager-node` 与 `@cloudbase/node-sdk` 完成初始化：创建三个集合，权限均为 `ADMINONLY`（已回读确认）；在 `team_posts` 建立 `hall_recent`、`mine_recent` 索引；写入 `app_config/main` 测试配置；以 ZIP 方式部署 `apex`（Nodejs20.19、`index.main`、10 秒、云端安装依赖、无触发器、无环境变量；仅授予 TCB 权限的密钥无法使用默认的 COS 上传方式）。以无微信身份方式调用已部署函数：`getConfig`、两种 `listPosts` 查询返回 `OK`，非法筛选、未知接口返回 `VALIDATION_ERROR`，不存在的记录返回 `NOT_FOUND`，`ensureUser`、`getContact`、`createPost`、`listMyPosts` 返回 `UNAUTHENTICATED`。随后在微信开发者工具控制台调用：`getConfig`、`ensureUser` 均返回 `OK`，`users` 集合生成 1 条账号记录（`userId` 与返回值一致，时间为 Date 类型），确认可信 OpenID 链路可用；前端改为 `apiMode: 'cloud'`。尚未在云端验证：发布/编辑/结束/删除与事务、游标翻页查询、双用户真机验收。
